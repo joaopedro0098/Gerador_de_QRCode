@@ -1,8 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
 import ActivateForm from './ActivateForm.jsx'
 import { downloadSvgString } from '../../utils/download.js'
 import { qrSvgForCode } from '../../utils/qr.js'
+
+function formatModalMeta(card) {
+  if (!card?.code) return null
+  const activated = Boolean(card.destination_url)
+  if (!activated) {
+    return 'Virgem'
+  }
+  if (card.activated_at) {
+    const date = new Date(card.activated_at).toLocaleDateString('pt-BR')
+    return `Ativado · desde ${date}`
+  }
+  return 'Ativado'
+}
 
 export default function CardDetailModal({
   card = null,
@@ -14,9 +27,13 @@ export default function CardDetailModal({
 }) {
   const [svg, setSvg] = useState('')
   const [qrLoading, setQrLoading] = useState(true)
-  const activateRef = useRef(null)
+  const [displayCard, setDisplayCard] = useState(card)
 
   const isOpen = activateOnly ? open : Boolean(card)
+
+  useEffect(() => {
+    setDisplayCard(card)
+  }, [card?.id, card?.destination_url, card?.activated_at, card?.code])
 
   useEffect(() => {
     if (!isOpen || !card || activateOnly) return
@@ -33,22 +50,21 @@ export default function CardDetailModal({
     }
   }, [card, activateOnly, isOpen])
 
-  useEffect(() => {
-    if (!isOpen || !focusActivate) return
-    const id = requestAnimationFrame(() => {
-      activateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-    return () => cancelAnimationFrame(id)
-  }, [isOpen, focusActivate, card?.id])
-
   if (!isOpen) return null
 
-  const activated = card ? Boolean(card.destination_url) : false
+  function handleSaved(updated) {
+    setDisplayCard(updated)
+    onSaved?.(updated)
+  }
+
+  const modalTitle = activateOnly ? 'Ativar card' : displayCard?.code
+  const headerMeta = activateOnly ? null : formatModalMeta(displayCard)
 
   return (
     <Modal
       open={isOpen}
-      title={activateOnly ? 'Ativar card' : card.code}
+      title={modalTitle}
+      headerMeta={headerMeta}
       onClose={onClose}
       wide
       cardLayout={!activateOnly && Boolean(card)}
@@ -76,20 +92,12 @@ export default function CardDetailModal({
         </section>
       )}
 
-      <section
-        className="modal-section modal-section-activate"
-        ref={activateRef}
-        id="modal-activate-section"
-      >
-        {!activateOnly && (
-          <h3 className="modal-section-title">
-            {activated ? 'Editar link' : 'Ativar'}
-          </h3>
-        )}
+      <section className="modal-section modal-section-activate" id="modal-activate-section">
         <ActivateForm
           card={activateOnly ? null : card}
           standalone={activateOnly}
-          onSaved={onSaved}
+          focusLinkOnMount={focusActivate}
+          onSaved={handleSaved}
         />
       </section>
     </Modal>

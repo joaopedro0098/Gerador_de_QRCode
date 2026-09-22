@@ -1,9 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import { normalizeCode } from '../../utils/codes.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
-export default function ActivateForm({ card = null, standalone = false, onSaved }) {
+function blockEmptyBackspaceNav(e) {
+  if (e.key !== 'Backspace') return
+  const el = e.target
+  if (el instanceof HTMLInputElement && el.value === '') {
+    e.preventDefault()
+  }
+}
+
+export default function ActivateForm({
+  card = null,
+  standalone = false,
+  focusLinkOnMount = false,
+  onSaved,
+}) {
+  const linkInputRef = useRef(null)
   const [code, setCode] = useState(card?.code ?? '')
   const [destinationUrl, setDestinationUrl] = useState('')
   const [notes, setNotes] = useState('')
@@ -86,6 +100,11 @@ export default function ActivateForm({ card = null, standalone = false, onSaved 
     }
   }, [card?.id, code, standalone])
 
+  useEffect(() => {
+    if (!focusLinkOnMount || loadingCard || !existing) return
+    linkInputRef.current?.focus({ preventScroll: true })
+  }, [focusLinkOnMount, loadingCard, existing?.id])
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
@@ -147,6 +166,7 @@ export default function ActivateForm({ card = null, standalone = false, onSaved 
             type="text"
             value={code}
             onChange={(e) => setCode(normalizeCode(e.target.value))}
+            onKeyDown={blockEmptyBackspaceNav}
             placeholder="ex: x7k92m"
             maxLength={6}
             autoComplete="off"
@@ -158,23 +178,17 @@ export default function ActivateForm({ card = null, standalone = false, onSaved 
       {!loadingCard && showCodeField && normalizedCode.length === 6 && !existing && (
         <p className="form-hint error">Este código não existe no sistema.</p>
       )}
-      {!loadingCard && existing && (
-        <p className="form-hint">
-          Código: <strong>{existing.code}</strong>
-          {' · '}
-          Status: <strong>{isActivated ? 'Ativado' : 'Virgem'}</strong>
-          {isActivated && existing.activated_at && (
-            <> · desde {new Date(existing.activated_at).toLocaleString('pt-BR')}</>
-          )}
-        </p>
-      )}
 
       <label>
         Link de avaliação (HTTPS)
         <input
-          type="url"
+          ref={linkInputRef}
+          type="text"
+          inputMode="url"
+          autoComplete="off"
           value={destinationUrl}
           onChange={(e) => setDestinationUrl(e.target.value)}
+          onKeyDown={blockEmptyBackspaceNav}
           placeholder="https://…"
           disabled={loadingCard || !existing}
         />
@@ -186,6 +200,7 @@ export default function ActivateForm({ card = null, standalone = false, onSaved 
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onKeyDown={blockEmptyBackspaceNav}
           placeholder="Nome do estabelecimento"
           disabled={loadingCard || !existing}
         />

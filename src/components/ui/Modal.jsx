@@ -1,6 +1,20 @@
 import { useEffect } from 'react'
 
-export default function Modal({ open, title, onClose, children, wide = false, cardLayout = false }) {
+function handleBackdropPointerDown(e, onClose) {
+  if (e.target === e.currentTarget) {
+    onClose()
+  }
+}
+
+export default function Modal({
+  open,
+  title,
+  headerMeta,
+  onClose,
+  children,
+  wide = false,
+  cardLayout = false,
+}) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => {
@@ -13,16 +27,23 @@ export default function Modal({ open, title, onClose, children, wide = false, ca
   if (!open) return null
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => handleBackdropPointerDown(e, onClose)}
+      role="presentation"
+    >
       <div
         className={`modal-panel${wide ? ' modal-panel-wide' : ''}${cardLayout ? ' modal-panel-card' : ''}`}
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
         <header className="modal-header">
-          <h2 id="modal-title">{title}</h2>
+          <div className="modal-title-block">
+            <h2 id="modal-title">{title}</h2>
+            {headerMeta ? <p className="modal-header-meta">{headerMeta}</p> : null}
+          </div>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Fechar">
             ×
           </button>
