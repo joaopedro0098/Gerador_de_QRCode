@@ -72,15 +72,15 @@ export default function BatchGenerateForm() {
       })
 
       const zipName = label
-        ? `lote-${label}-${codes.length}.zip`
-        : `lote-${new Date().toISOString().slice(0, 10)}-${codes.length}.zip`
+        ? `bairro-${label}-${codes.length}.zip`
+        : `bairro-${new Date().toISOString().slice(0, 10)}-${codes.length}.zip`
 
       setProgress('Preparando download…')
       await downloadSvgZip(zipEntries, zipName)
 
       setResult(`${codes.length} códigos criados e ZIP baixado.`)
     } catch (err) {
-      setError(err.message ?? 'Erro ao gerar lote.')
+      setError(err.message ?? 'Erro ao gerar bairro.')
     } finally {
       setLoading(false)
       setProgress('')
@@ -101,12 +101,12 @@ export default function BatchGenerateForm() {
       </label>
 
       <label>
-        Rótulo do lote (opcional)
+        Bairro (opcional)
         <input
           type="text"
           value={batchLabel}
           onChange={(e) => setBatchLabel(e.target.value)}
-          placeholder="mar-2026-001"
+          placeholder="Ex.: Centro, Jardins…"
         />
       </label>
 
@@ -119,7 +119,7 @@ export default function BatchGenerateForm() {
       {result && <p className="form-hint success">{result}</p>}
 
       <button type="submit" className="btn primary" disabled={loading}>
-        {loading ? 'Processando…' : 'Gerar lote e baixar ZIP'}
+        {loading ? 'Processando…' : 'Gerar bairro e baixar ZIP'}
       </button>
     </form>
   )

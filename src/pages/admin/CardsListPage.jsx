@@ -6,12 +6,15 @@ import Pagination from '../../components/ui/Pagination.jsx'
 import { PAGE_SIZE } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
 import { normalizeCode } from '../../utils/codes.js'
+import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../utils/search.js'
 
 const FILTERS = [
   { value: 'all', label: 'Todos' },
   { value: 'virgin', label: 'Virgens' },
   { value: 'activated', label: 'Ativados' },
 ]
+
+const SEARCH_DEBOUNCE_MS = 280
 
 export default function CardsListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -24,16 +27,18 @@ export default function CardsListPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedCard, setSelectedCard] = useState(null)
+  const [focusActivate, setFocusActivate] = useState(false)
 
   const codeFromUrl = searchParams.get('code')
 
   useEffect(() => {
-    if (!codeFromUrl) return
-    const normalized = normalizeCode(codeFromUrl)
-    setSearchInput(normalized)
-    setSearch(normalized)
-    setPage(1)
-  }, [codeFromUrl])
+    const term = normalizeEstablishmentSearch(searchInput)
+    const timer = window.setTimeout(() => {
+      setSearch(term)
+      setPage(1)
+    }, SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
 
   const loadCards = useCallback(async () => {
     setLoading(true)
@@ -57,7 +62,8 @@ export default function CardsListPage() {
     }
 
     if (search) {
-      query = query.ilike('code', `%${search}%`)
+      const prefix = escapeIlikePrefix(search)
+      query = query.not('notes', 'is', null).ilike('notes', `${prefix}%`)
     }
 
     const { data, error: fetchError, count } = await query
@@ -77,36 +83,51 @@ export default function CardsListPage() {
   }, [loadCards])
 
   useEffect(() => {
-    if (!codeFromUrl || !cards.length) return
-    const match = cards.find((c) => c.code === normalizeCode(codeFromUrl))
-    if (match) setSelectedCard(match)
-  }, [codeFromUrl, cards])
+    if (!codeFromUrl) return
+    const normalized = normalizeCode(codeFromUrl)
+    if (normalized.length !== 6) return
+
+    let cancelled = false
+    supabase
+      .from('cards')
+      .select('id, code, destination_url, activated_at, created_at, batch_label, notes')
+      .eq('code', normalized)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setSelectedCard(data)
+        setFocusActivate(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [codeFromUrl])
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  function closeCardModal() {
+    setSelectedCard(null)
+    setFocusActivate(false)
+    setSearchParams({})
+  }
+
+  function openCardModal(card, scrollToActivate = false) {
+    setSelectedCard(card)
+    setFocusActivate(scrollToActivate)
+  }
 
   function handleCardSaved(updated) {
     setCards((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
     setSelectedCard((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
-  }
-
-  function applySearch(e) {
-    e.preventDefault()
-    setPage(1)
-    setSearch(normalizeCode(searchInput))
-    if (searchInput.trim()) {
-      setSearchParams({ code: normalizeCode(searchInput) })
-    } else {
-      setSearchParams({})
-    }
+    loadCards()
   }
 
   return (
     <div className="admin-page">
       <header className="page-header">
-        <div>
-          <h1>Códigos</h1>
-          <p className="muted">{total} registro(s) no filtro atual</p>
-        </div>
+        <h1>Códigos</h1>
+        <p className="muted">{total} registro(s) no filtro atual</p>
       </header>
 
       <div className="toolbar">
@@ -128,25 +149,26 @@ export default function CardsListPage() {
           ))}
         </div>
 
-        <form className="search-form" onSubmit={applySearch}>
+        <div className="search-form">
           <input
             type="search"
-            placeholder="Buscar código…"
+            placeholder="Buscar estabelecimento…"
             value={searchInput}
-            onChange={(e) => setSearchInput(normalizeCode(e.target.value))}
-            maxLength={6}
+            onChange={(e) => setSearchInput(e.target.value)}
+            aria-label="Buscar estabelecimento"
           />
-          <button type="submit" className="btn secondary small">
-            Buscar
-          </button>
-        </form>
+        </div>
       </div>
 
       {loading && <p className="muted">Carregando…</p>}
       {error && <p className="form-hint error">{error}</p>}
       {!loading && !error && (
         <>
-          <CardsTable cards={cards} onSelectCard={setSelectedCard} />
+          <CardsTable
+            cards={cards}
+            onSelectCard={(card) => openCardModal(card, false)}
+            onActivateCard={(card) => openCardModal(card, true)}
+          />
           <Pagination
             page={page}
             pageCount={pageCount}
@@ -158,10 +180,8 @@ export default function CardsListPage() {
 
       <CardDetailModal
         card={selectedCard}
-        onClose={() => {
-          setSelectedCard(null)
-          setSearchParams({})
-        }}
+        focusActivate={focusActivate}
+        onClose={closeCardModal}
         onSaved={handleCardSaved}
       />
     </div>

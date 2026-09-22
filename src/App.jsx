@@ -19,7 +19,8 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<CardsListPage />} />
-              <Route path="lote" element={<BatchGeneratePage />} />
+              <Route path="bairro" element={<BatchGeneratePage />} />
+              <Route path="lote" element={<Navigate to="/admin/bairro" replace />} />
               <Route path="ativar/*" element={<Navigate to="/admin" replace />} />
             </Route>
           </Route>

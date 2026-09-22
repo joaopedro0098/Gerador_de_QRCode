@@ -1,24 +1,67 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
+import { normalizeCode } from '../../utils/codes.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
-export default function ActivateForm({ card, onSaved }) {
+export default function ActivateForm({ card = null, standalone = false, onSaved }) {
+  const [code, setCode] = useState(card?.code ?? '')
   const [destinationUrl, setDestinationUrl] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
-  const [loadingCard, setLoadingCard] = useState(true)
+  const [loadingCard, setLoadingCard] = useState(Boolean(card?.id))
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
   const [existing, setExisting] = useState(null)
 
   useEffect(() => {
+    if (standalone) return
+    if (!card?.id) return
+    setCode(card.code)
+  }, [card?.id, card?.code, standalone])
+
+  useEffect(() => {
+    setMessage(null)
+    setError(null)
+
+    if (standalone) {
+      const normalized = normalizeCode(code)
+      if (normalized.length !== 6) {
+        setExisting(null)
+        setDestinationUrl('')
+        setNotes('')
+        setLoadingCard(false)
+        return
+      }
+
+      let cancelled = false
+      setLoadingCard(true)
+      supabase
+        .from('cards')
+        .select('id, code, destination_url, activated_at, notes')
+        .eq('code', normalized)
+        .maybeSingle()
+        .then(({ data, error: fetchError }) => {
+          if (cancelled) return
+          setLoadingCard(false)
+          if (fetchError || !data) {
+            setExisting(null)
+            setDestinationUrl('')
+            setNotes('')
+            return
+          }
+          setExisting(data)
+          setDestinationUrl(data.destination_url ?? '')
+          setNotes(data.notes ?? '')
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     if (!card?.id) return
 
     let cancelled = false
-    setMessage(null)
-    setError(null)
     setLoadingCard(true)
-
     supabase
       .from('cards')
       .select('id, code, destination_url, activated_at, notes')
@@ -41,7 +84,7 @@ export default function ActivateForm({ card, onSaved }) {
     return () => {
       cancelled = true
     }
-  }, [card?.id])
+  }, [card?.id, code, standalone])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -49,7 +92,11 @@ export default function ActivateForm({ card, onSaved }) {
     setMessage(null)
 
     if (!existing) {
-      setError('Não foi possível carregar este código.')
+      setError(
+        standalone
+          ? 'Informe um código válido existente no sistema.'
+          : 'Não foi possível carregar este código.',
+      )
       return
     }
 
@@ -88,14 +135,34 @@ export default function ActivateForm({ card, onSaved }) {
   }
 
   const isActivated = Boolean(existing?.destination_url)
+  const normalizedCode = normalizeCode(code)
+  const showCodeField = standalone
 
   return (
     <form className="stack-form" onSubmit={handleSubmit}>
+      {showCodeField && (
+        <label>
+          Código do card
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(normalizeCode(e.target.value))}
+            placeholder="ex: x7k92m"
+            maxLength={6}
+            autoComplete="off"
+          />
+        </label>
+      )}
+
       {loadingCard && <p className="muted">Carregando…</p>}
+      {!loadingCard && showCodeField && normalizedCode.length === 6 && !existing && (
+        <p className="form-hint error">Este código não existe no sistema.</p>
+      )}
       {!loadingCard && existing && (
         <p className="form-hint">
-          Status:{' '}
-          <strong>{isActivated ? 'Ativado' : 'Virgem'}</strong>
+          Código: <strong>{existing.code}</strong>
+          {' · '}
+          Status: <strong>{isActivated ? 'Ativado' : 'Virgem'}</strong>
           {isActivated && existing.activated_at && (
             <> · desde {new Date(existing.activated_at).toLocaleString('pt-BR')}</>
           )}
@@ -114,12 +181,12 @@ export default function ActivateForm({ card, onSaved }) {
       </label>
 
       <label>
-        Observações (opcional)
+        Estabelecimento (opcional)
         <input
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Nome do cliente, etc."
+          placeholder="Nome do estabelecimento"
           disabled={loadingCard || !existing}
         />
       </label>

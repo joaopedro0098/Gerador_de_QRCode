@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export default function Modal({ open, title, onClose, children, wide = false }) {
+export default function Modal({ open, title, onClose, children, wide = false, cardLayout = false }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => {
@@ -15,7 +15,7 @@ export default function Modal({ open, title, onClose, children, wide = false }) 
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className={`modal-panel${wide ? ' modal-panel-wide' : ''}`}
+        className={`modal-panel${wide ? ' modal-panel-wide' : ''}${cardLayout ? ' modal-panel-card' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -27,7 +27,7 @@ export default function Modal({ open, title, onClose, children, wide = false }) 
             ×
           </button>
         </header>
-        <div className="modal-body">{children}</div>
+        <div className={`modal-body${cardLayout ? ' modal-body-card' : ''}`}>{children}</div>
       </div>
     </div>
   )
