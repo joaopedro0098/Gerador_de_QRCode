@@ -8,7 +8,7 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString('pt-BR')
 }
 
-export default function CardsTable({ cards, onSelectCard, onActivateCard }) {
+export default function CardsTable({ cards, onSelectCard, onActivateCard, onDeactivateCard }) {
   if (!cards.length) {
     return <p className="muted">Nenhum código encontrado.</p>
   }
@@ -51,13 +51,24 @@ export default function CardsTable({ cards, onSelectCard, onActivateCard }) {
                 <td>{formatDateOnly(card.created_at)}</td>
                 <td>{formatDateTime(card.activated_at)}</td>
                 <td className="cell-actions">
-                  <button
-                    type="button"
-                    className="btn secondary small"
-                    onClick={() => onActivateCard(card)}
-                  >
-                    {activated ? 'Editar' : 'Ativar'}
-                  </button>
+                  <div className="cell-actions-group">
+                    <button
+                      type="button"
+                      className="btn secondary small"
+                      onClick={() => onActivateCard(card)}
+                    >
+                      {activated ? 'Editar' : 'Ativar'}
+                    </button>
+                    {activated && (
+                      <button
+                        type="button"
+                        className="btn secondary small danger"
+                        onClick={() => onDeactivateCard(card)}
+                      >
+                        Desativar
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             )

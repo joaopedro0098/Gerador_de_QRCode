@@ -33,7 +33,7 @@ export default function CardDetailModal({
 
   useEffect(() => {
     setDisplayCard(card)
-  }, [card?.id, card?.destination_url, card?.activated_at, card?.code])
+  }, [card?.id, card?.destination_url, card?.activated_at, card?.code, card?.nfc_url, card?.nfc_uid, card?.notes])
 
   useEffect(() => {
     if (!isOpen || !card || activateOnly) return

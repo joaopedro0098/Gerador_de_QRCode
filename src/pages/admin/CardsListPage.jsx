@@ -5,7 +5,7 @@ import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
 import { PAGE_SIZE } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
-import { normalizeCode } from '../../utils/codes.js'
+import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../utils/search.js'
 
 const FILTERS = [
@@ -49,10 +49,12 @@ export default function CardsListPage() {
 
     let query = supabase
       .from('cards')
-      .select('id, code, destination_url, activated_at, created_at, batch_label, notes', {
+      .select(
+        'id, code, destination_url, activated_at, created_at, batch_label, notes, nfc_url, nfc_uid',
+        {
         count: 'exact',
       })
-      .order('created_at', { ascending: false })
+      .order('loja_num', { ascending: true })
       .range(from, to)
 
     if (filter === 'virgin') {
@@ -85,12 +87,14 @@ export default function CardsListPage() {
   useEffect(() => {
     if (!codeFromUrl) return
     const normalized = normalizeCode(codeFromUrl)
-    if (normalized.length !== 6) return
+    if (!isLojaCode(normalized)) return
 
     let cancelled = false
     supabase
       .from('cards')
-      .select('id, code, destination_url, activated_at, created_at, batch_label, notes')
+      .select(
+        'id, code, destination_url, activated_at, created_at, batch_label, notes, nfc_url, nfc_uid',
+      )
       .eq('code', normalized)
       .maybeSingle()
       .then(({ data }) => {
@@ -121,6 +125,37 @@ export default function CardsListPage() {
     setCards((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
     setSelectedCard((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
     loadCards()
+  }
+
+  async function handleDeactivateCard(card) {
+    if (!card?.destination_url) return
+    const ok = window.confirm(
+      `Desativar ${card.code}? QR, NFC e estabelecimento serão limpos e o card voltará para Virgens.`,
+    )
+    if (!ok) return
+
+    const { data, error: updateError } = await supabase
+      .from('cards')
+      .update({
+        destination_url: null,
+        activated_at: null,
+        notes: null,
+        nfc_url: null,
+        nfc_uid: null,
+      })
+      .eq('id', card.id)
+      .select()
+      .single()
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    if (selectedCard?.id === card.id) {
+      closeCardModal()
+    }
+    handleCardSaved(data)
   }
 
   return (
@@ -168,6 +203,7 @@ export default function CardsListPage() {
             cards={cards}
             onSelectCard={(card) => openCardModal(card, false)}
             onActivateCard={(card) => openCardModal(card, true)}
+            onDeactivateCard={handleDeactivateCard}
           />
           <Pagination
             page={page}

@@ -195,6 +195,10 @@ p {
   font-weight: 500;
 }
 
+.stack-form .btn.secondary {
+  margin-top: -0.35rem;
+}
+
 input[type='text'],
 input[type='email'],
 input[type='password'],
@@ -270,6 +274,15 @@ input:focus {
   color: var(--accent);
 }
 
+.btn.secondary.danger {
+  color: var(--danger);
+  border-color: #fecdca;
+}
+
+.btn.secondary.danger:hover:not(:disabled) {
+  background: #fef3f2;
+}
+
 .btn.small {
   padding: 0.35rem 0.65rem;
   font-size: 0.875rem;
@@ -341,6 +354,13 @@ input:focus {
 
 .cell-actions {
   white-space: nowrap;
+}
+
+.cell-actions-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
 }
 
 .badge {

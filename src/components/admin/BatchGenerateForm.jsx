@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BATCH_INSERT_CHUNK, BATCH_MAX } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
-import { generateUniqueCodes } from '../../utils/codes.js'
+import { nextSequentialLojaCodes } from '../../utils/codes.js'
 import { downloadSvgZip } from '../../utils/download.js'
 import { cardPublicUrl, qrSvgForCode } from '../../utils/qr.js'
 
@@ -36,7 +36,17 @@ export default function BatchGenerateForm() {
     setProgress('Gerando códigos…')
 
     try {
-      const codes = generateUniqueCodes(n)
+      setProgress('Reservando códigos sequenciais…')
+      const { data: existingRows, error: fetchError } = await supabase
+        .from('cards')
+        .select('code')
+        .like('code', 'loja%')
+
+      if (fetchError) {
+        throw new Error(fetchError.message)
+      }
+
+      const codes = nextSequentialLojaCodes(existingRows ?? [], n)
       const label = batchLabel.trim() || null
       const rows = codes.map((code) => ({
         code,
@@ -111,7 +121,8 @@ export default function BatchGenerateForm() {
       </label>
 
       <p className="form-hint muted">
-        Será gerado um ZIP com um SVG por código e um CSV (código, status, URL pública).
+        Códigos sequenciais: loja1, loja2, loja3… (até 15 caracteres). ZIP com SVG por
+        código e CSV (código, status, URL pública).
       </p>
 
       {progress && <p className="form-hint">{progress}</p>}
