@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-export default function Modal({ open, title, onClose, children }) {
+export default function Modal({ open, title, onClose, children, wide = false }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => {
@@ -15,7 +15,7 @@ export default function Modal({ open, title, onClose, children }) {
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className="modal-panel"
+        className={`modal-panel${wide ? ' modal-panel-wide' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

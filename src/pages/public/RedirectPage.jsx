@@ -9,8 +9,8 @@ const MESSAGES = {
     body: 'Este QR code não está cadastrado no sistema.',
   },
   not_activated: {
-    title: 'Card ainda não ativado',
-    body: 'Este card ainda não foi vinculado a um link de avaliação. Peça ao estabelecimento para ativá-lo.',
+    title: 'QR code virgem.',
+    body: null,
   },
 }
 
@@ -73,7 +73,7 @@ export default function RedirectPage() {
     <div className="public-page">
       <div className="public-card">
         <h1>{state.title}</h1>
-        <p>{state.body}</p>
+        {state.body ? <p>{state.body}</p> : null}
       </div>
     </div>
   )

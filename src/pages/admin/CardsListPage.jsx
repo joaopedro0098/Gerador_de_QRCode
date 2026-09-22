@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import CardQrModal from '../../components/admin/CardQrModal.jsx'
+import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
 import { PAGE_SIZE } from '../../lib/config.js'
@@ -84,6 +84,11 @@ export default function CardsListPage() {
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  function handleCardSaved(updated) {
+    setCards((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
+    setSelectedCard((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
+  }
+
   function applySearch(e) {
     e.preventDefault()
     setPage(1)
@@ -151,7 +156,14 @@ export default function CardsListPage() {
         </>
       )}
 
-      <CardQrModal card={selectedCard} onClose={() => setSelectedCard(null)} />
+      <CardDetailModal
+        card={selectedCard}
+        onClose={() => {
+          setSelectedCard(null)
+          setSearchParams({})
+        }}
+        onSaved={handleCardSaved}
+      />
     </div>
   )
 }

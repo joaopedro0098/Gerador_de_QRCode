@@ -382,7 +382,34 @@ input:focus {
   border-radius: 12px;
   width: 100%;
   max-width: 420px;
+  max-height: min(90vh, 720px);
+  overflow: auto;
   box-shadow: 0 16px 40px rgb(0 0 0 / 15%);
+}
+
+.modal-panel-wide {
+  max-width: 480px;
+}
+
+.modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.modal-section-title {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
 }
 
 .modal-header {

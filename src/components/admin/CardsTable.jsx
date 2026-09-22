@@ -1,5 +1,3 @@
-import { Link } from 'react-router-dom'
-
 function formatDate(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString('pt-BR')
@@ -21,7 +19,6 @@ export default function CardsTable({ cards, onSelectCard }) {
             <th>Observações</th>
             <th>Criado em</th>
             <th>Ativado em</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -47,11 +44,6 @@ export default function CardsTable({ cards, onSelectCard }) {
                 <td className="cell-notes">{card.notes || '—'}</td>
                 <td>{formatDate(card.created_at)}</td>
                 <td>{formatDate(card.activated_at)}</td>
-                <td className="cell-actions">
-                  <Link to={`/admin/ativar/${card.code}`} className="btn secondary small">
-                    {activated ? 'Editar' : 'Ativar'}
-                  </Link>
-                </td>
               </tr>
             )
           })}

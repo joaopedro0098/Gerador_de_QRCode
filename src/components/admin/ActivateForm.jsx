@@ -1,67 +1,55 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase.js'
-import { normalizeCode } from '../../utils/codes.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
-export default function ActivateForm({ initialCode = '' }) {
-  const [code, setCode] = useState(initialCode)
+export default function ActivateForm({ card, onSaved }) {
   const [destinationUrl, setDestinationUrl] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
-  const [loadingCard, setLoadingCard] = useState(false)
+  const [loadingCard, setLoadingCard] = useState(true)
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
   const [existing, setExisting] = useState(null)
 
   useEffect(() => {
-    setCode(initialCode)
-  }, [initialCode])
-
-  useEffect(() => {
-    const normalized = normalizeCode(code)
-    if (normalized.length !== 6) {
-      setExisting(null)
-      return
-    }
+    if (!card?.id) return
 
     let cancelled = false
+    setMessage(null)
+    setError(null)
     setLoadingCard(true)
+
     supabase
       .from('cards')
       .select('id, code, destination_url, activated_at, notes')
-      .eq('code', normalized)
-      .maybeSingle()
+      .eq('id', card.id)
+      .single()
       .then(({ data, error: fetchError }) => {
         if (cancelled) return
         setLoadingCard(false)
-        if (fetchError) {
+        if (fetchError || !data) {
           setExisting(null)
+          setDestinationUrl('')
+          setNotes('')
           return
         }
         setExisting(data)
-        if (data) {
-          setDestinationUrl(data.destination_url ?? '')
-          setNotes(data.notes ?? '')
-        } else {
-          setDestinationUrl('')
-          setNotes('')
-        }
+        setDestinationUrl(data.destination_url ?? '')
+        setNotes(data.notes ?? '')
       })
 
     return () => {
       cancelled = true
     }
-  }, [code])
+  }, [card?.id])
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
     setMessage(null)
 
-    const normalized = normalizeCode(code)
-    if (normalized.length !== 6) {
-      setError('Informe um código válido com 6 caracteres.')
+    if (!existing) {
+      setError('Não foi possível carregar este código.')
       return
     }
 
@@ -73,20 +61,19 @@ export default function ActivateForm({ initialCode = '' }) {
 
     setLoading(true)
 
+    const wasActivated = Boolean(existing.destination_url)
     const payload = {
       destination_url: url,
       activated_at: new Date().toISOString(),
       notes: notes.trim() || null,
     }
 
-    let result
-    if (existing) {
-      result = await supabase.from('cards').update(payload).eq('id', existing.id).select().single()
-    } else {
-      setError('Código não encontrado. Gere o lote antes de ativar.')
-      setLoading(false)
-      return
-    }
+    const result = await supabase
+      .from('cards')
+      .update(payload)
+      .eq('id', existing.id)
+      .select()
+      .single()
 
     setLoading(false)
 
@@ -96,37 +83,19 @@ export default function ActivateForm({ initialCode = '' }) {
     }
 
     setExisting(result.data)
-    setMessage(
-      existing?.destination_url
-        ? 'Link atualizado com sucesso.'
-        : 'Card ativado com sucesso.',
-    )
+    setMessage(wasActivated ? 'Link atualizado com sucesso.' : 'Card ativado com sucesso.')
+    onSaved?.(result.data)
   }
 
   const isActivated = Boolean(existing?.destination_url)
 
   return (
     <form className="stack-form" onSubmit={handleSubmit}>
-      <label>
-        Código do card
-        <input
-          type="text"
-          value={code}
-          onChange={(e) => setCode(normalizeCode(e.target.value))}
-          placeholder="ex: x7k92m"
-          maxLength={6}
-          autoComplete="off"
-        />
-      </label>
-
-      {loadingCard && <p className="muted">Buscando código…</p>}
-      {!loadingCard && code.length === 6 && !existing && (
-        <p className="form-hint error">Este código não existe no sistema.</p>
-      )}
+      {loadingCard && <p className="muted">Carregando…</p>}
       {!loadingCard && existing && (
         <p className="form-hint">
           Status:{' '}
-          <strong>{isActivated ? 'Ativado' : 'Virgem (não ativado)'}</strong>
+          <strong>{isActivated ? 'Ativado' : 'Virgem'}</strong>
           {isActivated && existing.activated_at && (
             <> · desde {new Date(existing.activated_at).toLocaleString('pt-BR')}</>
           )}
@@ -140,6 +109,7 @@ export default function ActivateForm({ initialCode = '' }) {
           value={destinationUrl}
           onChange={(e) => setDestinationUrl(e.target.value)}
           placeholder="https://…"
+          disabled={loadingCard || !existing}
         />
       </label>
 
@@ -150,26 +120,20 @@ export default function ActivateForm({ initialCode = '' }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Nome do cliente, etc."
+          disabled={loadingCard || !existing}
         />
       </label>
 
       {error && <p className="form-hint error">{error}</p>}
       {message && <p className="form-hint success">{message}</p>}
 
-      <div className="form-actions">
-        <button
-          type="submit"
-          className="btn primary"
-          disabled={loading || !existing || loadingCard}
-        >
-          {loading ? 'Salvando…' : isActivated ? 'Atualizar link' : 'Ativar card'}
-        </button>
-        {existing && (
-          <Link className="btn secondary" to={`/admin?code=${existing.code}`}>
-            Ver na lista
-          </Link>
-        )}
-      </div>
+      <button
+        type="submit"
+        className="btn primary"
+        disabled={loading || !existing || loadingCard}
+      >
+        {loading ? 'Salvando…' : isActivated ? 'Atualizar link' : 'Ativar card'}
+      </button>
     </form>
   )
 }

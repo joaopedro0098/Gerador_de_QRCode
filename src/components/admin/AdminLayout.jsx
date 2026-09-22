@@ -19,7 +19,6 @@ export default function AdminLayout() {
             Códigos
           </NavLink>
           <NavLink to="/admin/lote">Gerar lote</NavLink>
-          <NavLink to="/admin/ativar">Ativar</NavLink>
         </nav>
         <button type="button" className="btn secondary small" onClick={handleSignOut}>
           Sair

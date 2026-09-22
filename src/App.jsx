@@ -3,7 +3,6 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import AdminLayout from './components/admin/AdminLayout.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import RootRedirect from './routes/RootRedirect.jsx'
-import ActivatePage from './pages/admin/ActivatePage.jsx'
 import BatchGeneratePage from './pages/admin/BatchGeneratePage.jsx'
 import CardsListPage from './pages/admin/CardsListPage.jsx'
 import LoginPage from './pages/admin/LoginPage.jsx'
@@ -21,8 +20,7 @@ export default function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<CardsListPage />} />
               <Route path="lote" element={<BatchGeneratePage />} />
-              <Route path="ativar" element={<ActivatePage />} />
-              <Route path="ativar/:codigo" element={<ActivatePage />} />
+              <Route path="ativar/*" element={<Navigate to="/admin" replace />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
