@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
@@ -64,8 +64,10 @@ export default function CardsListPage() {
     }
 
     if (search) {
-      const prefix = escapeIlikePrefix(search)
-      query = query.not('notes', 'is', null).ilike('notes', `${prefix}%`)
+      const term = normalizeEstablishmentSearch(search)
+      const notesPrefix = escapeIlikePrefix(term)
+      const codePrefix = escapeIlikePrefix(normalizeCode(term))
+      query = query.or(`notes.ilike.${notesPrefix}%,code.ilike.${codePrefix}%`)
     }
 
     const { data, error: fetchError, count } = await query
@@ -184,13 +186,16 @@ export default function CardsListPage() {
           ))}
         </div>
 
-        <div className="search-form">
+        <div className="search-form search-form-with-arte">
+          <Link to="/admin/arte" className="btn secondary small">
+            Arte
+          </Link>
           <input
             type="search"
-            placeholder="Buscar estabelecimento…"
+            placeholder="Buscar código ou estabelecimento…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            aria-label="Buscar estabelecimento"
+            aria-label="Buscar código ou estabelecimento"
           />
         </div>
       </div>

@@ -12,9 +12,12 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "jszip": "^3.10.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-rnd": "^10.5.3",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
