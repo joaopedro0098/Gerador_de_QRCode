@@ -32,6 +32,10 @@ export default function ArtEditorPage() {
     setSessions((prev) => [...prev, data])
   }
 
+  function handleSessionUpdated(updated) {
+    setSessions((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+  }
+
   function handleDeleted(id) {
     setSessions((prev) => prev.filter((s) => s.id !== id))
   }
@@ -56,7 +60,7 @@ export default function ArtEditorPage() {
           <ArtSessionCard
             key={session.id}
             session={session}
-            onRefresh={load}
+            onSessionUpdated={handleSessionUpdated}
             onDeleted={handleDeleted}
           />
         ))}

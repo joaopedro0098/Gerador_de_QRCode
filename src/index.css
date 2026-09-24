@@ -216,6 +216,23 @@ p {
   font-size: 0.875rem;
 }
 
+.art-canvas-stage {
+  margin: 0 auto;
+}
+
+.art-canvas-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.art-card-rnd {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+
 .art-canvas-wrap {
   position: relative;
   margin: 0 auto;
@@ -230,8 +247,10 @@ p {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
+  object-position: center;
   pointer-events: none;
+  background: #fff;
 }
 
 .art-qr-rnd {

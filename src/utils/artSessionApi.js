@@ -8,7 +8,7 @@ import { defaultQrPlacementBottomRight } from './artUnits.js'
 import { getPdfPageSizeCm } from './artPdfRender.js'
 
 const SESSION_FIELDS =
-  'id, file_path, file_mime, card_width_cm, card_height_cm, qr_x_cm, qr_y_cm, qr_size_cm, created_at, updated_at'
+  'id, file_path, file_mime, card_width_cm, card_height_cm, qr_x_cm, qr_y_cm, qr_size_cm, art_aspect_ratio, created_at, updated_at'
 
 export async function listArtSessions() {
   return supabase.from('art_sessions').select(SESSION_FIELDS).order('created_at', { ascending: true })
@@ -72,6 +72,7 @@ export async function uploadArtSessionFile(sessionId, file) {
       file_mime: file.type,
       card_width_cm: size.widthCm,
       card_height_cm: size.heightCm,
+      art_aspect_ratio: size.widthCm / size.heightCm,
       qr_x_cm: qr.qr_x_cm,
       qr_y_cm: qr.qr_y_cm,
       qr_size_cm: qr.qr_size_cm,

@@ -42,7 +42,7 @@ export default function ArtVirginPreview({ session, code }) {
       </p>
       <div className="art-canvas-wrap" style={{ width: PREVIEW_WIDTH, height: previewHeight }}>
         {previewUrl && (
-          <img src={previewUrl} alt="" className="art-canvas-bg" draggable={false} />
+          <img src={previewUrl} alt="" className="art-canvas-bg art-canvas-bg-contain" draggable={false} />
         )}
         {qrSvg && (
           <div
