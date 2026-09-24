@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import BatchGenerateModal from '../../components/admin/BatchGenerateModal.jsx'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
@@ -8,8 +9,7 @@ import { supabase } from '../../lib/supabase.js'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../utils/search.js'
 
-const FILTERS = [
-  { value: 'all', label: 'Todos' },
+const STATUS_FILTERS = [
   { value: 'virgin', label: 'Virgens' },
   { value: 'activated', label: 'Ativados' },
 ]
@@ -28,8 +28,16 @@ export default function CardsListPage() {
   const [error, setError] = useState(null)
   const [selectedCard, setSelectedCard] = useState(null)
   const [focusActivate, setFocusActivate] = useState(false)
+  const [gerarOpen, setGerarOpen] = useState(false)
 
   const codeFromUrl = searchParams.get('code')
+
+  useEffect(() => {
+    if (searchParams.get('gerar') === '1') {
+      setGerarOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     const term = normalizeEstablishmentSearch(searchInput)
@@ -52,8 +60,9 @@ export default function CardsListPage() {
       .select(
         'id, code, destination_url, activated_at, created_at, batch_label, notes, nfc_url, nfc_uid',
         {
-        count: 'exact',
-      })
+          count: 'exact',
+        },
+      )
       .order('loja_num', { ascending: true })
       .range(from, to)
 
@@ -160,6 +169,11 @@ export default function CardsListPage() {
     handleCardSaved(data)
   }
 
+  function toggleStatusFilter(value) {
+    setFilter((prev) => (prev === value ? 'all' : value))
+    setPage(1)
+  }
+
   return (
     <div className="admin-page">
       <header className="page-header">
@@ -167,37 +181,36 @@ export default function CardsListPage() {
         <p className="muted">{total} registro(s) no filtro atual</p>
       </header>
 
-      <div className="toolbar">
+      <div className="toolbar toolbar-home">
         <div className="filter-group" role="tablist" aria-label="Filtrar por status">
-          {FILTERS.map((f) => (
+          {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
               role="tab"
               aria-selected={filter === f.value}
               className={`btn secondary small ${filter === f.value ? 'active' : ''}`}
-              onClick={() => {
-                setFilter(f.value)
-                setPage(1)
-              }}
+              onClick={() => toggleStatusFilter(f.value)}
             >
               {f.label}
             </button>
           ))}
-        </div>
-
-        <div className="search-form search-form-with-arte">
-          <Link to="/admin/arte" className="btn secondary small">
-            Arte
-          </Link>
           <input
             type="search"
+            className="toolbar-search"
             placeholder="Buscar código ou estabelecimento…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             aria-label="Buscar código ou estabelecimento"
           />
         </div>
+        <div className="toolbar-spacer" aria-hidden />
+        <button type="button" className="btn secondary small" onClick={() => setGerarOpen(true)}>
+          Gerar mais
+        </button>
+        <Link to="/admin/arte" className="btn secondary small">
+          Upload
+        </Link>
       </div>
 
       {loading && <p className="muted">Carregando…</p>}
@@ -225,6 +238,8 @@ export default function CardsListPage() {
         onClose={closeCardModal}
         onSaved={handleCardSaved}
       />
+
+      <BatchGenerateModal open={gerarOpen} onClose={() => setGerarOpen(false)} />
     </div>
   )
 }

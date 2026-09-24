@@ -1,14 +1,33 @@
 import {
   ART_BUCKET,
+  ART_DEFAULT_CARD_WIDTH_CM,
   ART_DEFAULT_QR_SIZE_CM,
   ART_QR_DEFAULT_MARGIN_CM,
 } from '../lib/config.js'
 import { supabase } from '../lib/supabase.js'
 import { defaultQrPlacementBottomRight } from './artUnits.js'
 import { getPdfPageSizeCm } from './artPdfRender.js'
+import { heightCmFromWidth } from './artMedia.js'
 
 const SESSION_FIELDS =
   'id, file_path, file_mime, card_width_cm, card_height_cm, qr_x_cm, qr_y_cm, qr_size_cm, art_aspect_ratio, created_at, updated_at'
+
+export function defaultDimensionsPayload(aspectRatio) {
+  const w = ART_DEFAULT_CARD_WIDTH_CM
+  const h = aspectRatio ? heightCmFromWidth(w, aspectRatio) : w
+  const qr = defaultQrPlacementBottomRight(
+    w,
+    h,
+    ART_DEFAULT_QR_SIZE_CM,
+    ART_QR_DEFAULT_MARGIN_CM,
+  )
+  return {
+    card_width_cm: w,
+    card_height_cm: h,
+    art_aspect_ratio: aspectRatio ?? w / h,
+    ...qr,
+  }
+}
 
 export async function listArtSessions() {
   return supabase.from('art_sessions').select(SESSION_FIELDS).order('created_at', { ascending: true })
@@ -32,6 +51,23 @@ export async function deleteArtSession(session) {
     await supabase.storage.from(ART_BUCKET).remove([session.file_path])
   }
   return supabase.from('art_sessions').delete().eq('id', session.id)
+}
+
+/** Remove o arquivo da sessão; mantém a sessão aberta para novo upload. */
+export async function clearArtSessionFile(session) {
+  if (session.file_path) {
+    await supabase.storage.from(ART_BUCKET).remove([session.file_path])
+  }
+  return updateArtSession(session.id, {
+    file_path: null,
+    file_mime: null,
+    card_width_cm: null,
+    card_height_cm: null,
+    qr_x_cm: null,
+    qr_y_cm: null,
+    qr_size_cm: null,
+    art_aspect_ratio: null,
+  })
 }
 
 export async function getArtSignedUrl(filePath, expiresIn = 3600) {
@@ -82,22 +118,6 @@ export async function uploadArtSessionFile(sessionId, file) {
   return updateArtSession(sessionId, {
     file_path: path,
     file_mime: file.type,
-  })
-}
-
-export async function finalizeArtSessionDimensions(sessionId, cardWidthCm, cardHeightCm) {
-  const qr = defaultQrPlacementBottomRight(
-    cardWidthCm,
-    cardHeightCm,
-    ART_DEFAULT_QR_SIZE_CM,
-    ART_QR_DEFAULT_MARGIN_CM,
-  )
-  return updateArtSession(sessionId, {
-    card_width_cm: cardWidthCm,
-    card_height_cm: cardHeightCm,
-    qr_x_cm: qr.qr_x_cm,
-    qr_y_cm: qr.qr_y_cm,
-    qr_size_cm: qr.qr_size_cm,
   })
 }
 

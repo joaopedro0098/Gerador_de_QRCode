@@ -13,14 +13,11 @@ export default function AdminLayout() {
   return (
     <div className="admin-shell">
       <header className="admin-topbar">
-        <div className="admin-brand">Cards QR · Admin</div>
+        <div className="admin-brand">Área do Admin</div>
         <nav className="admin-nav">
           <NavLink to="/admin" end>
-            Códigos
+            Home
           </NavLink>
-          <NavLink to="/admin/arte">Arte</NavLink>
-          <NavLink to="/admin/arte">Arte</NavLink>
-          <NavLink to="/admin/bairro">Gerar bairro</NavLink>
         </nav>
         <button type="button" className="btn secondary small" onClick={handleSignOut}>
           Sair

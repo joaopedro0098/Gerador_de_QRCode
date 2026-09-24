@@ -130,7 +130,7 @@ export default function BatchGenerateForm() {
       {result && <p className="form-hint success">{result}</p>}
 
       <button type="submit" className="btn primary" disabled={loading}>
-        {loading ? 'Processando…' : 'Gerar bairro e baixar ZIP'}
+        {loading ? 'Processando…' : 'Gerar e baixar ZIP'}
       </button>
     </form>
   )

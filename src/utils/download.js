@@ -7,10 +7,6 @@ function triggerDownload(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-export function downloadTextFile(content, filename, mime = 'text/plain;charset=utf-8') {
-  triggerDownload(new Blob([content], { type: mime }), filename)
-}
-
 export function downloadSvgString(svg, filename) {
   triggerDownload(new Blob([svg], { type: 'image/svg+xml' }), filename)
 }

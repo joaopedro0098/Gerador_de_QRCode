@@ -45,8 +45,3 @@ export function heightCmFromWidth(widthCm, aspectRatio) {
   if (!aspectRatio || !widthCm) return null
   return Number(widthCm) / Number(aspectRatio)
 }
-
-export function widthCmFromHeight(heightCm, aspectRatio) {
-  if (!aspectRatio || !heightCm) return null
-  return Number(heightCm) * Number(aspectRatio)
-}

@@ -1,17 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Rnd } from 'react-rnd'
 import { qrSvgForCode } from '../../../utils/qr.js'
 
 const STAGE_WIDTH = 360
 
-export default function ArtCanvasEditor({
-  session,
-  previewUrl,
-  onQrChange,
-  onCardSizeChange,
-}) {
+function ResizeGrip({ label }) {
+  return (
+    <span className="art-rnd-grip" aria-hidden title={label}>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path
+          d="M1 5V1H5M9 1H13V5M13 9V13H9M5 13H1V9"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        <path d="M7 4V10M4 7H10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    </span>
+  )
+}
+
+export default function ArtCanvasEditor({ session, previewUrl, previewCode, onQrChange }) {
   const [qrSvg, setQrSvg] = useState('')
-  const qrSvgLoaded = useRef(false)
 
   const scale = useMemo(() => {
     if (!session?.card_width_cm) return 1
@@ -20,17 +30,18 @@ export default function ArtCanvasEditor({
 
   const cardW = Number(session.card_width_cm) * scale
   const cardH = Number(session.card_height_cm) * scale
-  const aspect = Number(session.art_aspect_ratio) || cardW / cardH || 1
 
   const qrX = Number(session.qr_x_cm) * scale
   const qrY = Number(session.qr_y_cm) * scale
   const qrSize = Number(session.qr_size_cm) * scale
 
   useEffect(() => {
-    if (qrSvgLoaded.current) return
-    qrSvgLoaded.current = true
-    qrSvgForCode('loja0').then(setQrSvg)
-  }, [])
+    if (!previewCode) {
+      setQrSvg('')
+      return
+    }
+    qrSvgForCode(previewCode).then(setQrSvg)
+  }, [previewCode])
 
   if (!session?.card_width_cm || !previewUrl) return null
 
@@ -42,35 +53,10 @@ export default function ArtCanvasEditor({
     })
   }
 
-  function emitCardSize(widthPx, heightPx) {
-    onCardSizeChange({
-      card_width_cm: widthPx / scale,
-      card_height_cm: heightPx / scale,
-    })
-  }
-
   return (
     <div className="art-canvas-stage" style={{ width: STAGE_WIDTH, minHeight: cardH + 8 }}>
-      <Rnd
-        size={{ width: cardW, height: cardH }}
-        position={{ x: 0, y: 0 }}
-        lockAspectRatio={aspect}
-        enableResizing={{
-          bottom: false,
-          bottomLeft: true,
-          bottomRight: true,
-          left: false,
-          right: false,
-          top: false,
-          topLeft: true,
-          topRight: true,
-        }}
-        disableDragging
-        onResizeStop={(_e, _dir, ref) => {
-          emitCardSize(ref.offsetWidth, ref.offsetHeight)
-        }}
-        className="art-card-rnd"
-      >
+      <div className="art-canvas-wrap art-canvas-wrap-editor" style={{ width: cardW, height: cardH }}>
+        <ResizeGrip label="Arte" />
         <img src={previewUrl} alt="" className="art-canvas-bg" draggable={false} />
         {qrSvg && (
           <Rnd
@@ -78,19 +64,27 @@ export default function ArtCanvasEditor({
             position={{ x: qrX, y: qrY }}
             bounds="parent"
             lockAspectRatio
+            enableResizing={{
+              top: false,
+              right: false,
+              bottom: false,
+              left: false,
+              topRight: false,
+              bottomLeft: false,
+              topLeft: true,
+              bottomRight: true,
+            }}
             onDragStop={(_e, d) => emitQr(d.x, d.y, qrSize)}
             onResizeStop={(_e, _dir, ref, _delta, position) => {
               emitQr(position.x, position.y, ref.offsetWidth)
             }}
             className="art-qr-rnd"
           >
+            <ResizeGrip label="QR code" />
             <div className="art-qr-inner" dangerouslySetInnerHTML={{ __html: qrSvg }} />
           </Rnd>
         )}
-      </Rnd>
-      <p className="form-hint muted art-canvas-hint">
-        Arraste o canto do card para ajustar o tamanho (proporção preservada). Mova o QR dentro do card.
-      </p>
+      </div>
     </div>
   )
 }

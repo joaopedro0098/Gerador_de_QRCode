@@ -14,6 +14,7 @@ export default function Modal({
   children,
   wide = false,
   cardLayout = false,
+  animated = false,
 }) {
   useEffect(() => {
     if (!open) return
@@ -28,12 +29,12 @@ export default function Modal({
 
   return (
     <div
-      className="modal-backdrop"
+      className={`modal-backdrop${animated ? ' modal-backdrop-animated' : ''}`}
       onMouseDown={(e) => handleBackdropPointerDown(e, onClose)}
       role="presentation"
     >
       <div
-        className={`modal-panel${wide ? ' modal-panel-wide' : ''}${cardLayout ? ' modal-panel-card' : ''}`}
+        className={`modal-panel${wide ? ' modal-panel-wide' : ''}${cardLayout ? ' modal-panel-card' : ''}${animated ? ' modal-panel-animated' : ''}`}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

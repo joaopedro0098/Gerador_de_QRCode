@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ArtCanvasEditor from './ArtCanvasEditor.jsx'
-import ArtInsertModal from './ArtInsertModal.jsx'
-import { detectArtAspectRatio, heightCmFromWidth, widthCmFromHeight } from '../../../utils/artMedia.js'
-import { ART_DEFAULT_QR_SIZE_CM, ART_QR_DEFAULT_MARGIN_CM } from '../../../lib/config.js'
-import { defaultQrPlacementBottomRight } from '../../../utils/artUnits.js'
+import NumberWindowPagination from '../../ui/NumberWindowPagination.jsx'
+import { detectArtAspectRatio } from '../../../utils/artMedia.js'
+import { ART_DOWNLOAD_MAX } from '../../../lib/config.js'
+import { supabase } from '../../../lib/supabase.js'
+import { composeVirginCardPdf } from '../../../utils/artComposePdf.js'
+import { downloadQrCodesZip } from '../../../utils/artZipDownload.js'
+import { normalizeCode } from '../../../utils/codes.js'
+import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../../utils/search.js'
 import {
+  clearArtSessionFile,
+  defaultDimensionsPayload,
   deleteArtSession,
   getArtSignedUrl,
   updateArtSession,
@@ -13,39 +19,43 @@ import {
 
 const ACCEPT = '.jpg,.jpeg,.png,.svg,.pdf,image/jpeg,image/png,image/svg+xml,application/pdf'
 
-export default function ArtSessionCard({ session, onSessionUpdated, onDeleted }) {
+function establishmentLabel(notes) {
+  const t = notes?.trim()
+  return t ? t : 'virgem'
+}
+
+function statusLabel(destinationUrl) {
+  return destinationUrl ? 'Ativo' : 'Virgem'
+}
+
+export default function ArtSessionCard({
+  session,
+  sessionNumber = 1,
+  canDelete = true,
+  onSessionUpdated,
+  onDeleted,
+}) {
   const [local, setLocal] = useState(session)
   const [previewUrl, setPreviewUrl] = useState(null)
-  const [pendingDims, setPendingDims] = useState({ w: '8.5', h: '5.5' })
-  const [qrDraft, setQrDraft] = useState({ x: '', y: '', size: '' })
-  const [cardDraft, setCardDraft] = useState({ w: '', h: '' })
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [insertOpen, setInsertOpen] = useState(false)
+  const [quantity, setQuantity] = useState('1')
+  const [confirmedPool, setConfirmedPool] = useState([])
+  const [poolPage, setPoolPage] = useState(1)
+  const [confirmingQuantity, setConfirmingQuantity] = useState(false)
+  const [specificInput, setSpecificInput] = useState('')
+  const [specificCard, setSpecificCard] = useState(null)
+  const [canvasFallbackCode, setCanvasFallbackCode] = useState(null)
+  const [downloadBusy, setDownloadBusy] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState('')
+  const [clearingFile, setClearingFile] = useState(false)
   const saveTimer = useRef(null)
   const previewPathRef = useRef(null)
 
   useEffect(() => {
     setLocal(session)
   }, [session.id])
-
-  useEffect(() => {
-    syncDraftsFromLocal(local)
-  }, [local?.qr_x_cm, local?.qr_y_cm, local?.qr_size_cm, local?.card_width_cm, local?.card_height_cm])
-
-  function syncDraftsFromLocal(data) {
-    if (!data) return
-    setQrDraft({
-      x: data.qr_x_cm != null ? String(data.qr_x_cm) : '',
-      y: data.qr_y_cm != null ? String(data.qr_y_cm) : '',
-      size: data.qr_size_cm != null ? String(data.qr_size_cm) : '',
-    })
-    setCardDraft({
-      w: data.card_width_cm != null ? String(data.card_width_cm) : '',
-      h: data.card_height_cm != null ? String(data.card_height_cm) : '',
-    })
-  }
 
   useEffect(() => {
     if (!local?.file_path) {
@@ -64,6 +74,43 @@ export default function ArtSessionCard({ session, onSessionUpdated, onDeleted })
       cancelled = true
     }
   }, [local?.file_path])
+
+  const isReady =
+    local?.file_path && local.card_width_cm != null && local.qr_x_cm != null
+
+  useEffect(() => {
+    if (!isReady || confirmedPool.length || specificCard) return
+    let cancelled = false
+    supabase
+      .from('cards')
+      .select('code')
+      .is('destination_url', null)
+      .order('loja_num', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setCanvasFallbackCode(data?.code ?? null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isReady, confirmedPool.length, specificCard])
+
+  useEffect(() => {
+    if (poolPage > confirmedPool.length && confirmedPool.length > 0) {
+      setPoolPage(confirmedPool.length)
+    }
+  }, [confirmedPool.length, poolPage])
+
+  const previewCard =
+    specificCard ?? confirmedPool[Math.max(0, poolPage - 1)] ?? null
+
+  const previewCode =
+    previewCard?.code ??
+    (confirmedPool.length === 0 && !specificCard ? canvasFallbackCode : null)
+
+  const showMeta = Boolean(previewCard)
+  const showPagination = confirmedPool.length > 0 && !specificCard
 
   const persistSession = useCallback(
     (payload, { silent = true } = {}) => {
@@ -85,14 +132,6 @@ export default function ArtSessionCard({ session, onSessionUpdated, onDeleted })
     [local.id, onSessionUpdated],
   )
 
-  const needsDimensions =
-    local?.file_path && (local.card_width_cm == null || local.card_height_cm == null)
-
-  const isReady =
-    local?.file_path &&
-    local.card_width_cm != null &&
-    local.qr_x_cm != null
-
   async function handleFile(file) {
     if (!file || local.file_path) return
     setError(null)
@@ -104,113 +143,162 @@ export default function ArtSessionCard({ session, onSessionUpdated, onDeleted })
       setError(err.message)
       return
     }
+
     let next = data
-    if (aspect && data?.file_mime !== 'application/pdf') {
-      const { data: withAspect, error: aspectErr } = await updateArtSession(local.id, {
-        art_aspect_ratio: aspect,
+    if (data?.file_mime !== 'application/pdf') {
+      const dims = defaultDimensionsPayload(aspect ?? data?.art_aspect_ratio)
+      const { data: withDims, error: dimErr } = await updateArtSession(local.id, {
+        ...dims,
+        ...(aspect ? { art_aspect_ratio: aspect } : {}),
       })
-      if (!aspectErr && withAspect) next = withAspect
+      if (!dimErr && withDims) next = withDims
     }
+
     setUploading(false)
     setLocal(next)
     onSessionUpdated?.(next)
-    if (aspect && next?.file_mime !== 'application/pdf') {
-      const h = heightCmFromWidth(pendingDims.w, aspect)
-      if (h) setPendingDims((p) => ({ ...p, h: String(Number(h.toFixed(2))) }))
-    }
   }
 
-  async function handleSaveDimensions() {
-    const w = Number(pendingDims.w.replace(',', '.'))
-    const h = Number(pendingDims.h.replace(',', '.'))
-    if (!w || !h || w <= 0 || h <= 0) {
-      setError('Informe largura e altura válidas em cm.')
-      return
-    }
-    setSaving(true)
-    const qr = defaultQrPlacementBottomRight(
-      w,
-      h,
-      ART_DEFAULT_QR_SIZE_CM,
-      ART_QR_DEFAULT_MARGIN_CM,
-    )
-    const { data, error: err } = await updateArtSession(local.id, {
-      card_width_cm: w,
-      card_height_cm: h,
-      art_aspect_ratio: local.art_aspect_ratio ?? w / h,
-      ...qr,
-    })
-    setSaving(false)
+  function resetQrSelection() {
+    setConfirmedPool([])
+    setPoolPage(1)
+    setSpecificInput('')
+    setSpecificCard(null)
+  }
+
+  async function handleClearFile() {
+    if (!local.file_path) return
+    if (!window.confirm('Excluir o arquivo desta sessão? A sessão permanece aberta.')) return
+    setClearingFile(true)
+    setError(null)
+    previewPathRef.current = null
+    setPreviewUrl(null)
+    const { data, error: err } = await clearArtSessionFile(local)
+    setClearingFile(false)
     if (err) {
       setError(err.message)
       return
     }
     setLocal(data)
     onSessionUpdated?.(data)
+    resetQrSelection()
+    setCanvasFallbackCode(null)
   }
 
   function handleQrChange(qrFields) {
-    setLocal((prev) => {
-      const next = { ...prev, ...qrFields }
-      syncDraftsFromLocal(next)
-      return next
-    })
+    setLocal((prev) => ({ ...prev, ...qrFields }))
     persistSession(qrFields)
   }
 
-  function handleCardSizeChange(sizeFields) {
-    setLocal((prev) => ({ ...prev, ...sizeFields }))
-    setCardDraft({
-      w: String(sizeFields.card_width_cm),
-      h: String(sizeFields.card_height_cm),
-    })
-    persistSession(sizeFields)
+  async function handleConfirmQuantity() {
+    setError(null)
+    const n = Number(quantity)
+    if (!Number.isInteger(n) || n < 1 || n > ART_DOWNLOAD_MAX) {
+      setError(`Informe uma quantidade entre 1 e ${ART_DOWNLOAD_MAX}.`)
+      return
+    }
+    setConfirmingQuantity(true)
+    setSpecificInput('')
+    setSpecificCard(null)
+
+    const { data, error: err } = await supabase
+      .from('cards')
+      .select('id, code, notes, destination_url')
+      .is('destination_url', null)
+      .order('loja_num', { ascending: true })
+      .limit(n)
+
+    setConfirmingQuantity(false)
+    if (err) {
+      setError(err.message)
+      return
+    }
+    if (!data?.length) {
+      setError('Não há cards virgens disponíveis.')
+      setConfirmedPool([])
+      return
+    }
+    if (data.length < n) {
+      setError(`Só existem ${data.length} virgem(ns). Gere mais códigos ou reduza a quantidade.`)
+    }
+    setConfirmedPool(data)
+    setPoolPage(1)
   }
 
-  function handlePendingWidthChange(w) {
-    setPendingDims((p) => {
-      const next = { ...p, w }
-      const aspect = local.art_aspect_ratio
-      if (aspect) {
-        const h = heightCmFromWidth(w.replace(',', '.'), aspect)
-        if (h) next.h = String(Number(h.toFixed(2)))
+  async function handleSearchSpecific() {
+    setError(null)
+    try {
+      const card = await resolveSpecificCard()
+      if (!card) {
+        setError('Informe um código ou estabelecimento para buscar.')
+        return
       }
-      return next
-    })
+      setConfirmedPool([])
+      setPoolPage(1)
+    } catch (e) {
+      setError(e.message)
+      setSpecificCard(null)
+    }
   }
 
-  function handlePendingHeightChange(h) {
-    setPendingDims((p) => {
-      const next = { ...p, h }
-      const aspect = local.art_aspect_ratio
-      if (aspect) {
-        const w = widthCmFromHeight(h.replace(',', '.'), aspect)
-        if (w) next.w = String(Number(w.toFixed(2)))
+  async function resolveSpecificCard() {
+    const term = normalizeEstablishmentSearch(specificInput)
+    if (!term) {
+      setSpecificCard(null)
+      return null
+    }
+    const notesPrefix = escapeIlikePrefix(term)
+    const codePrefix = escapeIlikePrefix(normalizeCode(term))
+    const { data, error: err } = await supabase
+      .from('cards')
+      .select('id, code, notes, destination_url')
+      .or(`notes.ilike.${notesPrefix}%,code.ilike.${codePrefix}%`)
+      .order('loja_num', { ascending: true })
+      .limit(2)
+
+    if (err) throw new Error(err.message)
+    if (!data?.length) throw new Error('Nenhum card encontrado para essa busca.')
+    if (data.length > 1) {
+      throw new Error('Mais de um resultado — refine código ou estabelecimento.')
+    }
+    setSpecificCard(data[0])
+    return data[0]
+  }
+
+  async function handleDownload() {
+    setError(null)
+    setDownloadProgress('')
+    setDownloadBusy(true)
+    try {
+      let cardsToRender = []
+
+      if (specificCard) {
+        cardsToRender = [specificCard]
+      } else if (confirmedPool.length) {
+        cardsToRender = confirmedPool
+      } else {
+        throw new Error('Confirme a quantidade (OK) ou busque um QR code específico.')
       }
-      return next
-    })
+
+      const entries = []
+      for (let i = 0; i < cardsToRender.length; i++) {
+        setDownloadProgress(`Gerando PDF ${i + 1} de ${cardsToRender.length}…`)
+        const pdfBytes = await composeVirginCardPdf(local, cardsToRender[i].code)
+        entries.push({ filename: `${cardsToRender[i].code}.pdf`, content: pdfBytes })
+      }
+      setDownloadProgress('Compactando…')
+      await downloadQrCodesZip(entries)
+      setDownloadProgress('')
+    } catch (e) {
+      setError(e.message ?? 'Erro ao baixar.')
+    } finally {
+      setDownloadBusy(false)
+      setDownloadProgress('')
+    }
   }
 
-  function commitQrDraftField(field) {
-    const raw = qrDraft[field].replace(',', '.')
-    const num = Number(raw)
-    if (raw === '' || Number.isNaN(num)) return
-    handleQrChange({
-      qr_x_cm: field === 'x' ? num : Number(local.qr_x_cm),
-      qr_y_cm: field === 'y' ? num : Number(local.qr_y_cm),
-      qr_size_cm: field === 'size' ? num : Number(local.qr_size_cm),
-    })
-  }
-
-  function commitCardDraftField(field) {
-    const w = Number(cardDraft.w.replace(',', '.'))
-    const h = Number(cardDraft.h.replace(',', '.'))
-    if (Number.isNaN(w) || Number.isNaN(h) || w <= 0 || h <= 0) return
-    handleCardSizeChange({ card_width_cm: w, card_height_cm: h })
-  }
-
-  async function handleDelete() {
-    if (!window.confirm('Excluir esta sessão de arte?')) return
+  async function handleDeleteSession() {
+    if (!window.confirm('Excluir esta sessão por completo?')) return
     const { error: err } = await deleteArtSession(local)
     if (err) {
       setError(err.message)
@@ -219,132 +307,153 @@ export default function ArtSessionCard({ session, onSessionUpdated, onDeleted })
     onDeleted(local.id)
   }
 
+  const quantityLocked = Boolean(specificCard)
+
   return (
     <article className="art-session-card">
-      <header className="art-session-header">
-        <span className="muted">
-          Sessão · {new Date(local.created_at).toLocaleString('pt-BR')}
-        </span>
-        <button type="button" className="btn secondary small danger" onClick={handleDelete}>
-          Excluir sessão
-        </button>
-      </header>
-
-      {!local.file_path && (
-        <label className="art-upload-label">
-          <span>Enviar arte (PDF, SVG, JPG ou PNG — uma vez)</span>
-          <input
-            type="file"
-            accept={ACCEPT}
-            disabled={uploading}
-            onChange={(e) => handleFile(e.target.files?.[0])}
-          />
-        </label>
+      {(local.file_path || canDelete) && (
+        <header className="art-session-header art-session-header-compact">
+          <div className="art-session-header-actions">
+            {local.file_path && (
+              <button
+                type="button"
+                className="btn secondary small danger"
+                disabled={clearingFile}
+                onClick={handleClearFile}
+              >
+                {clearingFile ? 'Excluindo…' : 'Excluir arquivo'}
+              </button>
+            )}
+            {canDelete && (
+              <button type="button" className="btn secondary small danger" onClick={handleDeleteSession}>
+                Excluir sessão
+              </button>
+            )}
+          </div>
+        </header>
       )}
 
-      {uploading && <p className="muted">Enviando…</p>}
-
-      {needsDimensions && (
-        <div className="art-dims-pending stack-form">
-          <p className="form-hint">
-            Informe o tamanho físico do card em cm (altura ajusta pela proporção da imagem):
-          </p>
-          <label>
-            Largura (cm)
+      {!local.file_path && (
+        <div className="art-upload-zone">
+          <p className="art-session-title art-upload-session-label">Sessão {sessionNumber}</p>
+          <label className="art-upload-button">
             <input
-              type="text"
-              inputMode="decimal"
-              value={pendingDims.w}
-              onChange={(e) => handlePendingWidthChange(e.target.value)}
+              type="file"
+              accept={ACCEPT}
+              disabled={uploading}
+              onChange={(e) => {
+                handleFile(e.target.files?.[0])
+                e.target.value = ''
+              }}
             />
+            {uploading ? 'Enviando…' : 'Escolher arquivo'}
           </label>
-          <label>
-            Altura (cm)
-            <input
-              type="text"
-              inputMode="decimal"
-              value={pendingDims.h}
-              onChange={(e) => handlePendingHeightChange(e.target.value)}
-            />
-          </label>
-          <button type="button" className="btn primary" onClick={handleSaveDimensions} disabled={saving}>
-            Confirmar dimensões
-          </button>
         </div>
       )}
 
       {isReady && previewUrl && (
-        <>
-          <ArtCanvasEditor
-            session={local}
-            previewUrl={previewUrl}
-            onQrChange={handleQrChange}
-            onCardSizeChange={handleCardSizeChange}
-          />
-          <div className="art-cm-fields">
-            <label>
-              Card largura (cm)
-              <input
-                type="text"
-                inputMode="decimal"
-                value={cardDraft.w}
-                onChange={(e) => setCardDraft((d) => ({ ...d, w: e.target.value }))}
-                onBlur={() => commitCardDraftField('w')}
-              />
+        <div className="art-session-layout">
+          <aside className="art-session-sidebar">
+            <h2 className="art-session-title">Sessão {sessionNumber}</h2>
+
+            <label className="art-download-field">
+              Insira a quantidade
+              <div className="art-input-with-btn">
+                <input
+                  type="number"
+                  min={1}
+                  max={ART_DOWNLOAD_MAX}
+                  value={quantity}
+                  disabled={quantityLocked}
+                  onChange={(e) => setQuantity(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  disabled={quantityLocked || confirmingQuantity}
+                  onClick={handleConfirmQuantity}
+                >
+                  {confirmingQuantity ? '…' : 'OK'}
+                </button>
+              </div>
             </label>
-            <label>
-              Card altura (cm)
-              <input
-                type="text"
-                inputMode="decimal"
-                value={cardDraft.h}
-                onChange={(e) => setCardDraft((d) => ({ ...d, h: e.target.value }))}
-                onBlur={() => commitCardDraftField('h')}
-              />
+
+            <label className="art-download-field art-specific-field">
+              Insira um QR code específico
+              <div className="art-input-with-btn">
+                <input
+                  type="search"
+                  placeholder="insira um código ou estabelecimento"
+                  value={specificInput}
+                  onChange={(e) => {
+                    setSpecificInput(e.target.value)
+                    setSpecificCard(null)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleSearchSpecific()
+                    }
+                  }}
+                />
+                <button type="button" className="btn secondary small" onClick={handleSearchSpecific}>
+                  Buscar
+                </button>
+              </div>
             </label>
-            <label>
-              QR X (cm)
-              <input
-                type="text"
-                inputMode="decimal"
-                value={qrDraft.x}
-                onChange={(e) => setQrDraft((d) => ({ ...d, x: e.target.value }))}
-                onBlur={() => commitQrDraftField('x')}
+
+            {showPagination && (
+              <NumberWindowPagination
+                current={poolPage}
+                total={confirmedPool.length}
+                disabled={downloadBusy}
+                onChange={setPoolPage}
               />
-            </label>
-            <label>
-              QR Y (cm)
-              <input
-                type="text"
-                inputMode="decimal"
-                value={qrDraft.y}
-                onChange={(e) => setQrDraft((d) => ({ ...d, y: e.target.value }))}
-                onBlur={() => commitQrDraftField('y')}
-              />
-            </label>
-            <label>
-              QR tamanho (cm)
-              <input
-                type="text"
-                inputMode="decimal"
-                value={qrDraft.size}
-                onChange={(e) => setQrDraft((d) => ({ ...d, size: e.target.value }))}
-                onBlur={() => commitQrDraftField('size')}
-              />
-            </label>
+            )}
+
+            {showMeta && previewCard && (
+              <div className="art-preview-meta">
+                <p className="art-preview-line">
+                  <span className="art-preview-label">Código:</span> {previewCard.code}
+                </p>
+                <p className="art-preview-line muted">
+                  <span className="art-preview-label">Estabelecimento:</span>{' '}
+                  {establishmentLabel(previewCard.notes)}
+                </p>
+                <p className="art-preview-line muted">
+                  <span className="art-preview-label">Status:</span>{' '}
+                  {statusLabel(previewCard.destination_url)}
+                </p>
+              </div>
+            )}
+
+            <div className="art-download-actions">
+              <button
+                type="button"
+                className="btn primary"
+                disabled={downloadBusy || (!confirmedPool.length && !specificCard)}
+                onClick={handleDownload}
+              >
+                {downloadBusy ? 'Baixando…' : 'Baixar'}
+              </button>
+            </div>
+
+            {downloadProgress && <p className="form-hint">{downloadProgress}</p>}
+            {saving && <p className="muted">Salvando posição do QR…</p>}
+          </aside>
+
+          <div className="art-session-canvas-panel">
+            <ArtCanvasEditor
+              session={local}
+              previewUrl={previewUrl}
+              previewCode={previewCode}
+              onQrChange={handleQrChange}
+            />
           </div>
-          {saving && <p className="muted">Salvando…</p>}
-          <button type="button" className="btn primary" onClick={() => setInsertOpen(true)}>
-            Inserir QR code
-          </button>
-        </>
+        </div>
       )}
 
       {error && <p className="form-hint error">{error}</p>}
-
-      {insertOpen && (
-        <ArtInsertModal session={local} onClose={() => setInsertOpen(false)} />
-      )}
     </article>
   )
 }
