@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ArtCanvasEditor from './ArtCanvasEditor.jsx'
-import NumberWindowPagination from '../../ui/NumberWindowPagination.jsx'
 import { detectArtAspectRatio } from '../../../utils/artMedia.js'
 import { ART_DOWNLOAD_MAX } from '../../../lib/config.js'
 import { supabase } from '../../../lib/supabase.js'
 import { composeVirginCardPdf } from '../../../utils/artComposePdf.js'
-import { downloadQrCodesZip } from '../../../utils/artZipDownload.js'
+import { composeVirginCardSvg } from '../../../utils/artComposeSvg.js'
+import { downloadArtEntries } from '../../../utils/artZipDownload.js'
 import { normalizeCode } from '../../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../../utils/search.js'
 import {
@@ -18,6 +18,27 @@ import {
 } from '../../../utils/artSessionApi.js'
 
 const ACCEPT = '.jpg,.jpeg,.png,.svg,.pdf,image/jpeg,image/png,image/svg+xml,application/pdf'
+
+function DownloadIcon() {
+  return (
+    <svg
+      className="art-download-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
+}
 
 function establishmentLabel(notes) {
   const t = notes?.trim()
@@ -42,12 +63,12 @@ export default function ArtSessionCard({
   const [error, setError] = useState(null)
   const [quantity, setQuantity] = useState('1')
   const [confirmedPool, setConfirmedPool] = useState([])
-  const [poolPage, setPoolPage] = useState(1)
+  const [virginCount, setVirginCount] = useState(null)
   const [confirmingQuantity, setConfirmingQuantity] = useState(false)
   const [specificInput, setSpecificInput] = useState('')
   const [specificCard, setSpecificCard] = useState(null)
   const [canvasFallbackCode, setCanvasFallbackCode] = useState(null)
-  const [downloadBusy, setDownloadBusy] = useState(false)
+  const [downloadBusy, setDownloadBusy] = useState(null)
   const [downloadProgress, setDownloadProgress] = useState('')
   const [clearingFile, setClearingFile] = useState(false)
   const saveTimer = useRef(null)
@@ -97,20 +118,39 @@ export default function ArtSessionCard({
   }, [isReady, confirmedPool.length, specificCard])
 
   useEffect(() => {
-    if (poolPage > confirmedPool.length && confirmedPool.length > 0) {
-      setPoolPage(confirmedPool.length)
+    if (!isReady) {
+      setVirginCount(null)
+      return
     }
-  }, [confirmedPool.length, poolPage])
+    let cancelled = false
+    supabase
+      .from('cards')
+      .select('id', { count: 'exact', head: true })
+      .is('destination_url', null)
+      .then(({ count, error: err }) => {
+        if (cancelled) return
+        setVirginCount(err ? null : (count ?? 0))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isReady, confirmedPool.length])
 
-  const previewCard =
-    specificCard ?? confirmedPool[Math.max(0, poolPage - 1)] ?? null
+  const quantityNum = Number(quantity)
+  const quantityOverAvailable =
+    virginCount != null &&
+    Number.isInteger(quantityNum) &&
+    quantityNum > 0 &&
+    quantityNum > virginCount
+
+  const previewCard = specificCard ?? null
 
   const previewCode =
-    previewCard?.code ??
+    specificCard?.code ??
+    confirmedPool[0]?.code ??
     (confirmedPool.length === 0 && !specificCard ? canvasFallbackCode : null)
 
-  const showMeta = Boolean(previewCard)
-  const showPagination = confirmedPool.length > 0 && !specificCard
+  const showMeta = Boolean(specificCard)
 
   const persistSession = useCallback(
     (payload, { silent = true } = {}) => {
@@ -161,7 +201,6 @@ export default function ArtSessionCard({
 
   function resetQrSelection() {
     setConfirmedPool([])
-    setPoolPage(1)
     setSpecificInput('')
     setSpecificCard(null)
   }
@@ -197,6 +236,10 @@ export default function ArtSessionCard({
       setError(`Informe uma quantidade entre 1 e ${ART_DOWNLOAD_MAX}.`)
       return
     }
+    if (virginCount != null && n > virginCount) {
+      setConfirmedPool([])
+      return
+    }
     setConfirmingQuantity(true)
     setSpecificInput('')
     setSpecificCard(null)
@@ -214,15 +257,10 @@ export default function ArtSessionCard({
       return
     }
     if (!data?.length) {
-      setError('Não há cards virgens disponíveis.')
       setConfirmedPool([])
       return
     }
-    if (data.length < n) {
-      setError(`Só existem ${data.length} virgem(ns). Gere mais códigos ou reduza a quantidade.`)
-    }
     setConfirmedPool(data)
-    setPoolPage(1)
   }
 
   async function handleSearchSpecific() {
@@ -234,7 +272,6 @@ export default function ArtSessionCard({
         return
       }
       setConfirmedPool([])
-      setPoolPage(1)
     } catch (e) {
       setError(e.message)
       setSpecificCard(null)
@@ -265,37 +302,54 @@ export default function ArtSessionCard({
     return data[0]
   }
 
-  async function handleDownload() {
+  function resolveCardsToRender() {
+    if (specificCard) return specificCard
+    if (confirmedPool.length) return confirmedPool
+    return null
+  }
+
+  async function handleDownload(format) {
     setError(null)
     setDownloadProgress('')
-    setDownloadBusy(true)
+    const cardsToRender = resolveCardsToRender()
+    if (!cardsToRender) {
+      setError('Confirme a quantidade (OK) ou busque um QR code específico.')
+      return
+    }
+    const list = Array.isArray(cardsToRender) ? cardsToRender : [cardsToRender]
+
+    setDownloadBusy(format)
     try {
-      let cardsToRender = []
-
-      if (specificCard) {
-        cardsToRender = [specificCard]
-      } else if (confirmedPool.length) {
-        cardsToRender = confirmedPool
-      } else {
-        throw new Error('Confirme a quantidade (OK) ou busque um QR code específico.')
-      }
-
       const entries = []
-      for (let i = 0; i < cardsToRender.length; i++) {
-        setDownloadProgress(`Gerando PDF ${i + 1} de ${cardsToRender.length}…`)
-        const pdfBytes = await composeVirginCardPdf(local, cardsToRender[i].code)
-        entries.push({ filename: `${cardsToRender[i].code}.pdf`, content: pdfBytes })
+      const ext = format === 'pdf' ? 'pdf' : 'svg'
+      for (let i = 0; i < list.length; i++) {
+        setDownloadProgress(`Gerando ${ext.toUpperCase()} ${i + 1} de ${list.length}…`)
+        if (format === 'pdf') {
+          const pdfBytes = await composeVirginCardPdf(local, list[i].code)
+          entries.push({ filename: `${list[i].code}.pdf`, content: pdfBytes })
+        } else {
+          const svg = await composeVirginCardSvg(local, list[i].code)
+          entries.push({ filename: `${list[i].code}.svg`, content: svg })
+        }
       }
-      setDownloadProgress('Compactando…')
-      await downloadQrCodesZip(entries)
+      if (list.length > 1) {
+        setDownloadProgress('Compactando…')
+      }
+      await downloadArtEntries(entries, {
+        zipFilename: format === 'pdf' ? 'artes-pdf.zip' : 'artes-svg.zip',
+        mimeType: format === 'pdf' ? 'application/pdf' : 'image/svg+xml',
+      })
       setDownloadProgress('')
     } catch (e) {
       setError(e.message ?? 'Erro ao baixar.')
     } finally {
-      setDownloadBusy(false)
+      setDownloadBusy(null)
       setDownloadProgress('')
     }
   }
+
+  const canDownload = Boolean(confirmedPool.length || specificCard)
+  const downloadDisabled = Boolean(downloadBusy) || !canDownload
 
   async function handleDeleteSession() {
     if (!window.confirm('Excluir esta sessão por completo?')) return
@@ -358,6 +412,9 @@ export default function ArtSessionCard({
 
             <label className="art-download-field">
               Insira a quantidade
+              {virginCount != null && (
+                <span className="art-virgin-count-hint">{virginCount} virgens</span>
+              )}
               <div className="art-input-with-btn">
                 <input
                   type="number"
@@ -370,12 +427,15 @@ export default function ArtSessionCard({
                 <button
                   type="button"
                   className="btn secondary small"
-                  disabled={quantityLocked || confirmingQuantity}
+                  disabled={quantityLocked || confirmingQuantity || quantityOverAvailable}
                   onClick={handleConfirmQuantity}
                 >
                   {confirmingQuantity ? '…' : 'OK'}
                 </button>
               </div>
+              {quantityOverAvailable && (
+                <span className="art-qty-unavailable">Quantidade indisponível</span>
+              )}
             </label>
 
             <label className="art-download-field art-specific-field">
@@ -402,15 +462,6 @@ export default function ArtSessionCard({
               </div>
             </label>
 
-            {showPagination && (
-              <NumberWindowPagination
-                current={poolPage}
-                total={confirmedPool.length}
-                disabled={downloadBusy}
-                onChange={setPoolPage}
-              />
-            )}
-
             {showMeta && previewCard && (
               <div className="art-preview-meta">
                 <p className="art-preview-line">
@@ -430,11 +481,23 @@ export default function ArtSessionCard({
             <div className="art-download-actions">
               <button
                 type="button"
-                className="btn primary"
-                disabled={downloadBusy || (!confirmedPool.length && !specificCard)}
-                onClick={handleDownload}
+                className="btn art-download-format-btn"
+                disabled={downloadDisabled}
+                onClick={() => handleDownload('pdf')}
+                aria-label="Baixar PDF"
               >
-                {downloadBusy ? 'Baixando…' : 'Baixar'}
+                <DownloadIcon />
+                PDF
+              </button>
+              <button
+                type="button"
+                className="btn art-download-format-btn"
+                disabled={downloadDisabled}
+                onClick={() => handleDownload('svg')}
+                aria-label="Baixar SVG"
+              >
+                <DownloadIcon />
+                SVG
               </button>
             </div>
 

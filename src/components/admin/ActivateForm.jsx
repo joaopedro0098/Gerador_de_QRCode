@@ -9,7 +9,7 @@ import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { isNfcSupported } from '../../utils/nfc.js'
 
 const CARD_SELECT =
-  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, batch_label, created_at'
+  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, created_at'
 
 function blockEmptyBackspaceNav(e) {
   if (e.key !== 'Backspace') return
@@ -49,7 +49,8 @@ export default function ActivateForm({
     setExisting(data)
     setDestinationUrl(data.destination_url ?? '')
     setNfcUrl(data.nfc_url ?? '')
-    setNotes(data.notes ?? '')
+    const trimmedNotes = data.notes?.trim()
+    setNotes(trimmedNotes ? data.notes : (data.code ?? ''))
   }
 
   useEffect(() => {
@@ -128,6 +129,33 @@ export default function ActivateForm({
     setExisting(data)
     setMessage(text)
     onSaved?.(data)
+  }
+
+  async function handleSaveEstablishment() {
+    setError(null)
+    setMessage(null)
+    setNfcHint(null)
+    if (!existing) {
+      setError('Não foi possível carregar este código.')
+      return
+    }
+
+    setBusy('notes')
+    const value = notes.trim()
+    const { data, error: saveError } = await supabase
+      .from('cards')
+      .update({ notes: value || null })
+      .eq('id', existing.id)
+      .select(CARD_SELECT)
+      .single()
+    setBusy(null)
+
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+
+    finishSuccess(data, 'Estabelecimento salvo.')
   }
 
   async function handleGerarQr() {
@@ -242,7 +270,7 @@ export default function ActivateForm({
   const disabled = isBusy || loadingCard || !existing
 
   return (
-    <form className="stack-form" onSubmit={handleAtivacaoCompleta}>
+    <form className="stack-form activate-form" onSubmit={handleAtivacaoCompleta}>
       {showCodeField && (
         <label>
           Código do card
@@ -263,61 +291,77 @@ export default function ActivateForm({
         <p className="form-hint error">Este código não existe no sistema.</p>
       )}
 
-      <label>
-        Link de avaliação — QR (HTTPS)
-        <input
-          ref={linkInputRef}
-          type="text"
-          inputMode="url"
-          autoComplete="off"
-          value={destinationUrl}
-          onChange={(e) => setDestinationUrl(e.target.value)}
-          onKeyDown={blockEmptyBackspaceNav}
-          placeholder="https://…"
-          disabled={disabled}
-        />
-      </label>
-      <button
-        type="button"
-        className="btn secondary"
-        disabled={disabled}
-        onClick={handleGerarQr}
-      >
-        {busy === 'qr' ? 'Salvando QR…' : 'Gerar QR'}
-      </button>
+      {!loadingCard && existing && (
+        <label>
+          Estabelecimento
+          <div className="activate-inline-actions">
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onKeyDown={blockEmptyBackspaceNav}
+              placeholder="Nome do estabelecimento"
+              disabled={isBusy || loadingCard}
+            />
+            <button
+              type="button"
+              className="btn secondary small"
+              disabled={isBusy || loadingCard}
+              onClick={handleSaveEstablishment}
+            >
+              {busy === 'notes' ? '…' : 'Salvar'}
+            </button>
+          </div>
+        </label>
+      )}
 
       <label>
-        Link NFC (HTTPS)
-        <input
-          type="text"
-          inputMode="url"
-          autoComplete="off"
-          value={nfcUrl}
-          onChange={(e) => setNfcUrl(e.target.value)}
-          onKeyDown={blockEmptyBackspaceNav}
-          placeholder="https://…"
-          disabled={disabled}
-        />
+        QR Code
+        <div className="activate-inline-actions">
+          <input
+            ref={linkInputRef}
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            value={destinationUrl}
+            onChange={(e) => setDestinationUrl(e.target.value)}
+            onKeyDown={blockEmptyBackspaceNav}
+            placeholder="Cole o link aqui"
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            className="btn secondary small"
+            disabled={disabled}
+            onClick={handleGerarQr}
+          >
+            {busy === 'qr' ? 'Salvando…' : 'Salvar'}
+          </button>
+        </div>
       </label>
-      <button
-        type="button"
-        className="btn secondary"
-        disabled={disabled}
-        onClick={handleGerarNfc}
-      >
-        {busy === 'nfc' ? 'Aproxime a tag…' : 'Gerar NFC'}
-      </button>
 
       <label>
-        Estabelecimento (opcional)
-        <input
-          type="text"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          onKeyDown={blockEmptyBackspaceNav}
-          placeholder="Nome do estabelecimento"
-          disabled={disabled}
-        />
+        NFC
+        <div className="activate-inline-actions">
+          <input
+            type="text"
+            inputMode="url"
+            autoComplete="off"
+            value={nfcUrl}
+            onChange={(e) => setNfcUrl(e.target.value)}
+            onKeyDown={blockEmptyBackspaceNav}
+            placeholder="Cole o link aqui"
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            className="btn secondary small"
+            disabled={disabled}
+            onClick={handleGerarNfc}
+          >
+            {busy === 'nfc' ? 'Aproxime a tag…' : 'Salvar'}
+          </button>
+        </div>
       </label>
 
       {nfcHint && <p className="form-hint">{nfcHint}</p>}
@@ -325,7 +369,7 @@ export default function ActivateForm({
       {message && <p className="form-hint success">{message}</p>}
 
       <button type="submit" className="btn primary" disabled={disabled}>
-        {busy === 'full' ? 'Processando…' : 'Ativação completa'}
+        {busy === 'full' ? 'Processando…' : 'Ativar'}
       </button>
     </form>
   )

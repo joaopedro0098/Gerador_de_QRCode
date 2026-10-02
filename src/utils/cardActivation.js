@@ -2,7 +2,7 @@ import { getNfcUserMessage, isNfcSupported, normalizeUid, scanAndWriteNfcUrl } f
 import { isValidHttpsUrl } from './validate.js'
 
 const CARD_FIELDS =
-  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, batch_label, created_at'
+  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, created_at'
 
 export async function fetchCardById(supabase, id) {
   return supabase.from('cards').select(CARD_FIELDS).eq('id', id).single()

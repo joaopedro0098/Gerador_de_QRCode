@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { BATCH_INSERT_CHUNK, BATCH_MAX } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
 import { nextSequentialLojaCodes } from '../../utils/codes.js'
-import { downloadSvgZip } from '../../utils/download.js'
-import { cardPublicUrl, qrSvgForCode } from '../../utils/qr.js'
 
 function chunkArray(arr, size) {
   const chunks = []
@@ -15,7 +13,6 @@ function chunkArray(arr, size) {
 
 export default function BatchGenerateForm() {
   const [quantity, setQuantity] = useState(50)
-  const [batchLabel, setBatchLabel] = useState('')
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
@@ -33,10 +30,9 @@ export default function BatchGenerateForm() {
     }
 
     setLoading(true)
-    setProgress('Gerando códigos…')
+    setProgress('Reservando códigos sequenciais…')
 
     try {
-      setProgress('Reservando códigos sequenciais…')
       const { data: existingRows, error: fetchError } = await supabase
         .from('cards')
         .select('code')
@@ -47,11 +43,7 @@ export default function BatchGenerateForm() {
       }
 
       const codes = nextSequentialLojaCodes(existingRows ?? [], n)
-      const label = batchLabel.trim() || null
-      const rows = codes.map((code) => ({
-        code,
-        batch_label: label,
-      }))
+      const rows = codes.map((code) => ({ code }))
 
       for (const [index, chunk] of chunkArray(rows, BATCH_INSERT_CHUNK).entries()) {
         setProgress(`Salvando no banco (${index + 1})…`)
@@ -61,36 +53,9 @@ export default function BatchGenerateForm() {
         }
       }
 
-      setProgress('Gerando QR codes…')
-      const zipEntries = []
-      const csvLines = ['code,status,url']
-
-      for (let i = 0; i < codes.length; i++) {
-        const code = codes[i]
-        if (i % 25 === 0) {
-          setProgress(`Gerando SVG ${i + 1} de ${codes.length}…`)
-        }
-        const svg = await qrSvgForCode(code)
-        zipEntries.push({ filename: `${code}.svg`, content: svg })
-        const url = cardPublicUrl(code)
-        csvLines.push(`${code},virgem,${url}`)
-      }
-
-      zipEntries.push({
-        filename: 'codigos.csv',
-        content: csvLines.join('\n'),
-      })
-
-      const zipName = label
-        ? `bairro-${label}-${codes.length}.zip`
-        : `bairro-${new Date().toISOString().slice(0, 10)}-${codes.length}.zip`
-
-      setProgress('Preparando download…')
-      await downloadSvgZip(zipEntries, zipName)
-
-      setResult(`${codes.length} códigos criados e ZIP baixado.`)
+      setResult(`${codes.length} QR codes virgens criados.`)
     } catch (err) {
-      setError(err.message ?? 'Erro ao gerar bairro.')
+      setError(err.message ?? 'Erro ao gerar.')
     } finally {
       setLoading(false)
       setProgress('')
@@ -110,19 +75,9 @@ export default function BatchGenerateForm() {
         />
       </label>
 
-      <label>
-        Bairro (opcional)
-        <input
-          type="text"
-          value={batchLabel}
-          onChange={(e) => setBatchLabel(e.target.value)}
-          placeholder="Ex.: Centro, Jardins…"
-        />
-      </label>
-
       <p className="form-hint muted">
-        Códigos sequenciais: loja1, loja2, loja3… (até 15 caracteres). ZIP com SVG por
-        código e CSV (código, status, URL pública).
+        Códigos sequenciais: loja1, loja2, loja3… (até 15 caracteres). Apenas cria cards virgens no
+        sistema.
       </p>
 
       {progress && <p className="form-hint">{progress}</p>}
@@ -130,7 +85,7 @@ export default function BatchGenerateForm() {
       {result && <p className="form-hint success">{result}</p>}
 
       <button type="submit" className="btn primary" disabled={loading}>
-        {loading ? 'Processando…' : 'Gerar e baixar ZIP'}
+        {loading ? 'Processando…' : 'Gerar'}
       </button>
     </form>
   )

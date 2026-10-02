@@ -336,12 +336,27 @@ p {
 
 .art-download-actions {
   display: flex;
+  gap: 0.5rem;
   justify-content: stretch;
   margin-top: 0.25rem;
 }
 
-.art-download-actions .btn.primary {
-  width: 100%;
+.art-download-format-btn {
+  flex: 1;
+  gap: 0.35rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.art-download-format-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.art-download-icon {
+  flex-shrink: 0;
 }
 
 .art-upload-zone {
@@ -422,6 +437,18 @@ p {
   gap: 0.35rem;
   font-size: 0.85rem;
   min-width: 120px;
+}
+
+.art-virgin-count-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.art-qty-unavailable {
+  font-size: 0.75rem;
+  color: #c0392b;
+  font-weight: 400;
 }
 
 .art-download-field input {
@@ -775,16 +802,10 @@ input:focus {
 }
 
 .modal-body-card {
-  display: grid;
-  grid-template-columns: minmax(140px, 200px) 1fr;
-  gap: 1rem 1.25rem;
-  align-items: start;
-}
-
-@media (max-width: 520px) {
-  .modal-body-card {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
 }
 
 .modal-body-card .modal-section {
@@ -800,7 +821,44 @@ input:focus {
 }
 
 .modal-body-card .modal-section-activate {
+  width: 100%;
+  max-width: 400px;
   min-width: 0;
+}
+
+.activate-form {
+  width: 100%;
+  align-items: stretch;
+}
+
+.activate-form .form-hint,
+.activate-form .muted {
+  text-align: center;
+}
+
+.activate-form .activate-inline-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.activate-form .activate-inline-actions input {
+  flex: 1;
+  min-width: 0;
+}
+
+.activate-form .activate-inline-actions .btn {
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.activate-form label {
+  text-align: left;
+}
+
+.activate-form > .btn.primary {
+  align-self: center;
+  min-width: 8rem;
 }
 
 .modal-section {

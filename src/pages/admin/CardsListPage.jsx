@@ -58,7 +58,7 @@ export default function CardsListPage() {
     let query = supabase
       .from('cards')
       .select(
-        'id, code, destination_url, activated_at, created_at, batch_label, notes, nfc_url, nfc_uid',
+        'id, code, destination_url, activated_at, created_at, notes, nfc_url, nfc_uid',
         {
           count: 'exact',
         },
@@ -104,7 +104,7 @@ export default function CardsListPage() {
     supabase
       .from('cards')
       .select(
-        'id, code, destination_url, activated_at, created_at, batch_label, notes, nfc_url, nfc_uid',
+        'id, code, destination_url, activated_at, created_at, notes, nfc_url, nfc_uid',
       )
       .eq('code', normalized)
       .maybeSingle()

@@ -20,7 +20,6 @@ export default function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<CardsListPage />} />
               <Route path="arte" element={<ArtEditorPage />} />
-              <Route path="bairro" element={<Navigate to="/admin?gerar=1" replace />} />
               <Route path="lote" element={<Navigate to="/admin?gerar=1" replace />} />
               <Route path="ativar/*" element={<Navigate to="/admin" replace />} />
             </Route>

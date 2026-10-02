@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Rnd } from 'react-rnd'
+import { fetchArtFileBytes } from '../../../utils/artSessionApi.js'
+import { renderPdfPageToPngBytes } from '../../../utils/artPdfRender.js'
 import { qrSvgForCode } from '../../../utils/qr.js'
 
 const STAGE_WIDTH = 360
@@ -22,6 +24,8 @@ function ResizeGrip({ label }) {
 
 export default function ArtCanvasEditor({ session, previewUrl, previewCode, onQrChange }) {
   const [qrSvg, setQrSvg] = useState('')
+  const [bgSrc, setBgSrc] = useState(null)
+  const pdfBlobUrlRef = useRef(null)
 
   const scale = useMemo(() => {
     if (!session?.card_width_cm) return 1
@@ -43,7 +47,51 @@ export default function ArtCanvasEditor({ session, previewUrl, previewCode, onQr
     qrSvgForCode(previewCode).then(setQrSvg)
   }, [previewCode])
 
-  if (!session?.card_width_cm || !previewUrl) return null
+  useEffect(() => {
+    function revokePdfBlobUrl() {
+      if (pdfBlobUrlRef.current) {
+        URL.revokeObjectURL(pdfBlobUrlRef.current)
+        pdfBlobUrlRef.current = null
+      }
+    }
+
+    if (!session?.file_path || !session?.card_width_cm) {
+      revokePdfBlobUrl()
+      setBgSrc(null)
+      return
+    }
+
+    if (session.file_mime !== 'application/pdf') {
+      revokePdfBlobUrl()
+      setBgSrc(previewUrl ?? null)
+      return
+    }
+
+    let cancelled = false
+    revokePdfBlobUrl()
+    setBgSrc(null)
+
+    ;(async () => {
+      try {
+        const bytes = await fetchArtFileBytes(session.file_path)
+        if (cancelled) return
+        const pngBytes = await renderPdfPageToPngBytes(bytes.buffer)
+        if (cancelled) return
+        const url = URL.createObjectURL(new Blob([pngBytes], { type: 'image/png' }))
+        pdfBlobUrlRef.current = url
+        setBgSrc(url)
+      } catch {
+        if (!cancelled) setBgSrc(null)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      revokePdfBlobUrl()
+    }
+  }, [session?.file_path, session?.file_mime, session?.card_width_cm, previewUrl])
+
+  if (!session?.card_width_cm || !bgSrc) return null
 
   function emitQr(xPx, yPx, sizePx) {
     onQrChange({
@@ -57,7 +105,7 @@ export default function ArtCanvasEditor({ session, previewUrl, previewCode, onQr
     <div className="art-canvas-stage" style={{ width: STAGE_WIDTH, minHeight: cardH + 8 }}>
       <div className="art-canvas-wrap art-canvas-wrap-editor" style={{ width: cardW, height: cardH }}>
         <ResizeGrip label="Arte" />
-        <img src={previewUrl} alt="" className="art-canvas-bg" draggable={false} />
+        <img src={bgSrc} alt="" className="art-canvas-bg" draggable={false} />
         {qrSvg && (
           <Rnd
             size={{ width: qrSize, height: qrSize }}

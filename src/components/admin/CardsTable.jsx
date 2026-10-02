@@ -20,7 +20,6 @@ export default function CardsTable({ cards, onSelectCard, onActivateCard, onDeac
           <tr>
             <th>Código</th>
             <th>Status</th>
-            <th>Bairro</th>
             <th>Estabelecimento</th>
             <th>Criado em</th>
             <th>Ativado em</th>
@@ -46,7 +45,6 @@ export default function CardsTable({ cards, onSelectCard, onActivateCard, onDeac
                     {activated ? 'Ativado' : 'Virgem'}
                   </span>
                 </td>
-                <td>{card.batch_label || '—'}</td>
                 <td className="cell-notes">{card.notes || '—'}</td>
                 <td>{formatDateOnly(card.created_at)}</td>
                 <td>{formatDateTime(card.activated_at)}</td>
