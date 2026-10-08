@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 function handleBackdropPointerDown(e, onClose) {
   if (e.target === e.currentTarget) {
@@ -27,7 +28,7 @@ export default function Modal({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
       className={`modal-backdrop${animated ? ' modal-backdrop-animated' : ''}`}
       onMouseDown={(e) => handleBackdropPointerDown(e, onClose)}
@@ -51,6 +52,7 @@ export default function Modal({
         </header>
         <div className={`modal-body${cardLayout ? ' modal-body-card' : ''}`}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

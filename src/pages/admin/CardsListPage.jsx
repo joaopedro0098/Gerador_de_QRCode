@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import ActivatedLocationsExplorer from '../../components/admin/ActivatedLocationsExplorer.jsx'
 import BatchGenerateModal from '../../components/admin/BatchGenerateModal.jsx'
+import CardAnnotationModal from '../../components/admin/CardAnnotationModal.jsx'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
+import { CARD_FIELDS } from '../../utils/cardActivation.js'
+import {
+  applyActivatedCardsFilter,
+  applyVirginCardsFilter,
+  isCardActivated,
+} from '../../utils/cardStatus.js'
 import { PAGE_SIZE } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
+import { searchActivatedCards } from '../../utils/locationApi.js'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../utils/search.js'
 
@@ -29,8 +38,12 @@ export default function CardsListPage() {
   const [selectedCard, setSelectedCard] = useState(null)
   const [focusActivate, setFocusActivate] = useState(false)
   const [gerarOpen, setGerarOpen] = useState(false)
+  const [explorerRefreshKey, setExplorerRefreshKey] = useState(0)
+  const [annotationCard, setAnnotationCard] = useState(null)
 
   const codeFromUrl = searchParams.get('code')
+  const showActivatedExplorer = filter === 'activated' && !search.trim()
+  const showActivatedSearch = filter === 'activated' && Boolean(search.trim())
 
   useEffect(() => {
     if (searchParams.get('gerar') === '1') {
@@ -48,28 +61,46 @@ export default function CardsListPage() {
     return () => window.clearTimeout(timer)
   }, [searchInput])
 
-  const loadCards = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const loadCards = useCallback(async ({ silent = false } = {}) => {
+    if (showActivatedExplorer) {
+      if (!silent) setLoading(false)
+      setCards([])
+      setTotal(0)
+      return
+    }
+
+    if (showActivatedSearch) {
+      if (!silent) setLoading(true)
+      setError(null)
+      const { data, error: fetchError } = await searchActivatedCards(search)
+      if (!silent) setLoading(false)
+      if (fetchError) {
+        setError(fetchError.message)
+        return
+      }
+      setCards(data ?? [])
+      setTotal(data?.length ?? 0)
+      return
+    }
+
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
 
     const from = (page - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
     let query = supabase
       .from('cards')
-      .select(
-        'id, code, destination_url, activated_at, created_at, notes, nfc_url, nfc_uid',
-        {
-          count: 'exact',
-        },
-      )
+      .select(CARD_FIELDS, { count: 'exact' })
       .order('loja_num', { ascending: true })
       .range(from, to)
 
     if (filter === 'virgin') {
-      query = query.is('destination_url', null)
+      query = applyVirginCardsFilter(query)
     } else if (filter === 'activated') {
-      query = query.not('destination_url', 'is', null)
+      query = applyActivatedCardsFilter(query)
     }
 
     if (search) {
@@ -81,15 +112,15 @@ export default function CardsListPage() {
 
     const { data, error: fetchError, count } = await query
 
-    setLoading(false)
+    if (!silent) setLoading(false)
     if (fetchError) {
-      setError(fetchError.message)
+      if (!silent) setError(fetchError.message)
       return
     }
 
     setCards(data ?? [])
     setTotal(count ?? 0)
-  }, [page, filter, search])
+  }, [page, filter, search, showActivatedExplorer, showActivatedSearch])
 
   useEffect(() => {
     loadCards()
@@ -103,13 +134,14 @@ export default function CardsListPage() {
     let cancelled = false
     supabase
       .from('cards')
-      .select(
-        'id, code, destination_url, activated_at, created_at, notes, nfc_url, nfc_uid',
-      )
+      .select(CARD_FIELDS)
       .eq('code', normalized)
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled || !data) return
+        if (!isCardActivated(data)) {
+          setFilter('virgin')
+        }
         setSelectedCard(data)
         setFocusActivate(true)
       })
@@ -125,6 +157,7 @@ export default function CardsListPage() {
     setSelectedCard(null)
     setFocusActivate(false)
     setSearchParams({})
+    loadCards({ silent: true })
   }
 
   function openCardModal(card, scrollToActivate = false) {
@@ -132,16 +165,42 @@ export default function CardsListPage() {
     setFocusActivate(scrollToActivate)
   }
 
-  function handleCardSaved(updated) {
-    setCards((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
+  function bumpExplorerRefresh() {
+    setExplorerRefreshKey((k) => k + 1)
+  }
+
+  function handleCardSaved(updated, { reloadList = false } = {}) {
+    const prevActivated = selectedCard ? isCardActivated(selectedCard) : false
+    const nextActivated = isCardActivated(updated)
+
+    setCards((prev) => {
+      if (filter === 'virgin' && nextActivated) {
+        return prev.filter((c) => c.id !== updated.id)
+      }
+      return prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+    })
+    if (filter === 'virgin' && nextActivated) {
+      setTotal((t) => Math.max(0, t - 1))
+    }
     setSelectedCard((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
-    loadCards()
+
+    const bairroMoved =
+      selectedCard?.location_bairro_id &&
+      updated.location_bairro_id &&
+      selectedCard.location_bairro_id !== updated.location_bairro_id
+
+    if (prevActivated !== nextActivated || bairroMoved) {
+      bumpExplorerRefresh()
+    }
+    if (reloadList) {
+      loadCards({ silent: true })
+    }
   }
 
   async function handleDeactivateCard(card) {
-    if (!card?.destination_url) return
+    if (!isCardActivated(card)) return
     const ok = window.confirm(
-      `Desativar ${card.code}? QR, NFC e estabelecimento serão limpos e o card voltará para Virgens.`,
+      `Desativar ${card.code}? QR, NFC, estabelecimento, bairro e anotações serão limpos e o card voltará para Virgens.`,
     )
     if (!ok) return
 
@@ -153,9 +212,12 @@ export default function CardsListPage() {
         notes: null,
         nfc_url: null,
         nfc_uid: null,
+        location_bairro_id: null,
+        paused: false,
+        annotation: null,
       })
       .eq('id', card.id)
-      .select()
+      .select(CARD_FIELDS)
       .single()
 
     if (updateError) {
@@ -166,19 +228,49 @@ export default function CardsListPage() {
     if (selectedCard?.id === card.id) {
       closeCardModal()
     }
+    handleCardSaved(data, { reloadList: true })
+  }
+
+  async function handlePauseCard(card) {
+    if (!isCardActivated(card)) return
+    const nextPaused = !card.paused
+    const { data, error: updateError } = await supabase
+      .from('cards')
+      .update({ paused: nextPaused })
+      .eq('id', card.id)
+      .select(CARD_FIELDS)
+      .single()
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
     handleCardSaved(data)
   }
 
   function toggleStatusFilter(value) {
-    setFilter((prev) => (prev === value ? 'all' : value))
+    setFilter((prev) => {
+      const next = prev === value ? 'all' : value
+      if (next === 'virgin' || next === 'all') {
+        setSearchInput('')
+        setSearch('')
+      }
+      return next
+    })
     setPage(1)
   }
+
+  const showSearchField = filter === 'activated'
 
   return (
     <div className="admin-page">
       <header className="page-header">
         <h1>Códigos</h1>
-        <p className="muted">{total} registro(s) no filtro atual</p>
+        <p className="muted">
+          {showActivatedExplorer
+            ? 'Estado → Cidade → Distrito → Bairro → QR codes (clique em cada camada)'
+            : `${total} registro(s) no filtro atual`}
+        </p>
       </header>
 
       <div className="toolbar toolbar-home">
@@ -195,14 +287,16 @@ export default function CardsListPage() {
               {f.label}
             </button>
           ))}
-          <input
-            type="search"
-            className="toolbar-search"
-            placeholder="Buscar código ou estabelecimento…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            aria-label="Buscar código ou estabelecimento"
-          />
+          {showSearchField && (
+            <input
+              type="search"
+              className="toolbar-search"
+              placeholder="Buscar código, estabelecimento, cidade, distrito ou bairro…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              aria-label="Buscar"
+            />
+          )}
         </div>
         <div className="toolbar-spacer" aria-hidden />
         <button type="button" className="btn secondary small" onClick={() => setGerarOpen(true)}>
@@ -213,22 +307,39 @@ export default function CardsListPage() {
         </Link>
       </div>
 
-      {loading && <p className="muted">Carregando…</p>}
+      {loading && !showActivatedExplorer && <p className="muted">Carregando…</p>}
       {error && <p className="form-hint error">{error}</p>}
-      {!loading && !error && (
+
+      {showActivatedExplorer && !error && (
+        <ActivatedLocationsExplorer
+          refreshKey={explorerRefreshKey}
+          onSelectCard={(card) => openCardModal(card, false)}
+          onActivateCard={(card) => openCardModal(card, true)}
+          onDeactivateCard={handleDeactivateCard}
+          onPauseCard={handlePauseCard}
+          onAnnotationCard={setAnnotationCard}
+        />
+      )}
+
+      {!showActivatedExplorer && !loading && !error && (
         <>
           <CardsTable
             cards={cards}
+            showLocationColumn={showActivatedSearch}
             onSelectCard={(card) => openCardModal(card, false)}
             onActivateCard={(card) => openCardModal(card, true)}
             onDeactivateCard={handleDeactivateCard}
+            onPauseCard={handlePauseCard}
+            onAnnotationCard={setAnnotationCard}
           />
-          <Pagination
-            page={page}
-            pageCount={pageCount}
-            disabled={loading}
-            onPageChange={setPage}
-          />
+          {!showActivatedSearch && (
+            <Pagination
+              page={page}
+              pageCount={pageCount}
+              disabled={loading}
+              onPageChange={setPage}
+            />
+          )}
         </>
       )}
 
@@ -236,6 +347,13 @@ export default function CardsListPage() {
         card={selectedCard}
         focusActivate={focusActivate}
         onClose={closeCardModal}
+        onSaved={handleCardSaved}
+      />
+
+      <CardAnnotationModal
+        card={annotationCard}
+        open={Boolean(annotationCard)}
+        onClose={() => setAnnotationCard(null)}
         onSaved={handleCardSaved}
       />
 

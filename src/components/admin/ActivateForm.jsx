@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import {
+  CARD_FIELDS,
   activateComplete,
   activateNfc,
   activateQr,
+  isCardActivated,
 } from '../../utils/cardActivation.js'
+import BairroActivateField from './BairroActivateField.jsx'
+import ChangeBairroConfirmModal from './ChangeBairroConfirmModal.jsx'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
+import { isActiveCardBairroChange } from '../../utils/cardStatus.js'
+import { blockEmptyBackspaceNav } from '../../utils/formInput.js'
 import { isNfcSupported } from '../../utils/nfc.js'
-
-const CARD_SELECT =
-  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, created_at'
-
-function blockEmptyBackspaceNav(e) {
-  if (e.key !== 'Backspace') return
-  const el = e.target
-  if (el instanceof HTMLInputElement && el.value === '') {
-    e.preventDefault()
-  }
-}
 
 export default function ActivateForm({
   card = null,
@@ -35,9 +30,12 @@ export default function ActivateForm({
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
   const [existing, setExisting] = useState(null)
+  const [locationBairroId, setLocationBairroId] = useState(null)
   const [nfcHint, setNfcHint] = useState(null)
-
-  const isBusy = Boolean(busy)
+  const [bairroConfirmOpen, setBairroConfirmOpen] = useState(false)
+  const [bairroConfirmBusy, setBairroConfirmBusy] = useState(false)
+  const bairroConfirmResolverRef = useRef(null)
+  const pendingBairroIdRef = useRef(null)
 
   useEffect(() => {
     if (standalone) return
@@ -49,8 +47,8 @@ export default function ActivateForm({
     setExisting(data)
     setDestinationUrl(data.destination_url ?? '')
     setNfcUrl(data.nfc_url ?? '')
-    const trimmedNotes = data.notes?.trim()
-    setNotes(trimmedNotes ? data.notes : (data.code ?? ''))
+    setNotes(data.notes?.trim() ? data.notes : '')
+    setLocationBairroId(data.location_bairro_id ?? null)
   }
 
   useEffect(() => {
@@ -73,7 +71,7 @@ export default function ActivateForm({
       setLoadingCard(true)
       supabase
         .from('cards')
-        .select(CARD_SELECT)
+        .select(CARD_FIELDS)
         .eq('code', normalized)
         .maybeSingle()
         .then(({ data, error: fetchError }) => {
@@ -95,16 +93,17 @@ export default function ActivateForm({
 
     if (!card?.id) return
 
+    applyCardData(card)
+    setLoadingCard(false)
+
     let cancelled = false
-    setLoadingCard(true)
     supabase
       .from('cards')
-      .select(CARD_SELECT)
+      .select(CARD_FIELDS)
       .eq('id', card.id)
       .single()
       .then(({ data, error: fetchError }) => {
         if (cancelled) return
-        setLoadingCard(false)
         if (fetchError || !data) {
           setExisting(null)
           setDestinationUrl('')
@@ -131,6 +130,75 @@ export default function ActivateForm({
     onSaved?.(data)
   }
 
+  function askBairroChangeConfirm(newBairroId) {
+    pendingBairroIdRef.current = newBairroId
+    setBairroConfirmOpen(true)
+    return new Promise((resolve) => {
+      bairroConfirmResolverRef.current = resolve
+    })
+  }
+
+  function closeBairroConfirm(result) {
+    bairroConfirmResolverRef.current?.(result)
+    bairroConfirmResolverRef.current = null
+    pendingBairroIdRef.current = null
+    setBairroConfirmOpen(false)
+  }
+
+  async function persistBairroChange(newBairroId) {
+    if (!existing?.id || !newBairroId) return false
+    setBairroConfirmBusy(true)
+    const { data, error: saveError } = await supabase
+      .from('cards')
+      .update({ location_bairro_id: newBairroId })
+      .eq('id', existing.id)
+      .select(CARD_FIELDS)
+      .single()
+    setBairroConfirmBusy(false)
+
+    if (saveError) {
+      setError(saveError.message)
+      return false
+    }
+
+    applyCardData(data)
+    setLocationBairroId(data.location_bairro_id)
+    finishSuccess(data, 'Bairro atualizado.')
+    return true
+  }
+
+  async function onBeforeBairroChange(newBairroId) {
+    if (!existing || !isActiveCardBairroChange(existing, newBairroId)) {
+      return true
+    }
+    const proceed = await askBairroChangeConfirm(newBairroId)
+    if (!proceed) return false
+    return true
+  }
+
+  async function ensureBairroChangeBeforeSave() {
+    if (!existing || !isActiveCardBairroChange(existing, locationBairroId)) {
+      return true
+    }
+    const proceed = await askBairroChangeConfirm(locationBairroId)
+    if (!proceed) return false
+    return true
+  }
+
+  async function handleBairroConfirmProceed() {
+    const newId = pendingBairroIdRef.current
+    if (!newId) {
+      closeBairroConfirm(false)
+      return
+    }
+    const ok = await persistBairroChange(newId)
+    closeBairroConfirm(ok)
+  }
+
+  function handleBairroConfirmCancel() {
+    closeBairroConfirm(false)
+  }
+
   async function handleSaveEstablishment() {
     setError(null)
     setMessage(null)
@@ -146,7 +214,7 @@ export default function ActivateForm({
       .from('cards')
       .update({ notes: value || null })
       .eq('id', existing.id)
-      .select(CARD_SELECT)
+      .select(CARD_FIELDS)
       .single()
     setBusy(null)
 
@@ -166,10 +234,15 @@ export default function ActivateForm({
       setError('Não foi possível carregar este código.')
       return
     }
+    if (!(await ensureBairroChangeBeforeSave())) return
 
     setBusy('qr')
-    const wasActivated = Boolean(existing.destination_url)
-    const { data, error: qrError } = await activateQr(supabase, existing.id, destinationUrl)
+    const wasActivated = isCardActivated(existing)
+    const { data, error: qrError } = await activateQr(supabase, existing.id, destinationUrl, {
+      locationBairroId,
+      wasActivated,
+      existingBairroId: existing.location_bairro_id,
+    })
     setBusy(null)
 
     if (qrError) {
@@ -196,9 +269,15 @@ export default function ActivateForm({
       setNfcHint('Use Chrome no Android para gravar NFC.')
       return
     }
+    if (!(await ensureBairroChangeBeforeSave())) return
 
     setBusy('nfc')
-    const result = await activateNfc(supabase, existing.id, nfcUrl)
+    const wasActivated = isCardActivated(existing)
+    const result = await activateNfc(supabase, existing.id, nfcUrl, {
+      locationBairroId,
+      wasActivated,
+      existingBairroId: existing.location_bairro_id,
+    })
     setBusy(null)
 
     if (result.cancelled) {
@@ -209,7 +288,10 @@ export default function ActivateForm({
       return
     }
 
-    finishSuccess(result.data, 'NFC gravado com sucesso.')
+    finishSuccess(
+      result.data,
+      result.savedUrlOnly ? 'Link NFC salvo.' : 'NFC gravado com sucesso.',
+    )
   }
 
   async function handleAtivacaoCompleta(e) {
@@ -227,13 +309,18 @@ export default function ActivateForm({
       return
     }
 
-    const wasActivated = Boolean(existing.destination_url)
+    const wasActivated = isCardActivated(existing)
+    if (!(await ensureBairroChangeBeforeSave())) return
+
     setBusy('full')
 
     const result = await activateComplete(supabase, existing.id, {
       destinationUrl,
       nfcUrl,
       notes,
+      locationBairroId,
+      wasActivated,
+      existingBairroId: existing.location_bairro_id,
     })
 
     setBusy(null)
@@ -255,8 +342,8 @@ export default function ActivateForm({
       return
     }
 
-    if (result.nfcSkipped && nfcUrl.trim() && !isNfcSupported()) {
-      setNfcHint('Use Chrome no Android para gravar NFC.')
+    if (result.nfcSavedUrlOnly) {
+      setNfcHint('Link NFC salvo. Use Chrome no Android para gravar a tag física.')
     }
 
     finishSuccess(
@@ -267,7 +354,18 @@ export default function ActivateForm({
 
   const normalizedCode = normalizeCode(code)
   const showCodeField = standalone
-  const disabled = isBusy || loadingCard || !existing
+  const formUnavailable = loadingCard || !existing
+  const formLocked = formUnavailable || busy === 'full'
+
+  function fieldInputDisabled() {
+    return formUnavailable || busy === 'full'
+  }
+
+  function fieldButtonDisabled(forField) {
+    if (formUnavailable) return true
+    if (busy === 'full') return true
+    return busy === forField
+  }
 
   return (
     <form className="stack-form activate-form" onSubmit={handleAtivacaoCompleta}>
@@ -292,6 +390,15 @@ export default function ActivateForm({
       )}
 
       {!loadingCard && existing && (
+        <BairroActivateField
+          bairroId={locationBairroId}
+          onBairroIdChange={setLocationBairroId}
+          onBeforeBairroChange={onBeforeBairroChange}
+          disabled={formLocked}
+        />
+      )}
+
+      {!loadingCard && existing && (
         <label>
           Estabelecimento
           <div className="activate-inline-actions">
@@ -300,13 +407,13 @@ export default function ActivateForm({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               onKeyDown={blockEmptyBackspaceNav}
-              placeholder="Nome do estabelecimento"
-              disabled={isBusy || loadingCard}
+              placeholder="insira o nome do estabelecimento"
+              disabled={fieldInputDisabled()}
             />
             <button
               type="button"
               className="btn secondary small"
-              disabled={isBusy || loadingCard}
+              disabled={fieldButtonDisabled('notes')}
               onClick={handleSaveEstablishment}
             >
               {busy === 'notes' ? '…' : 'Salvar'}
@@ -327,12 +434,12 @@ export default function ActivateForm({
             onChange={(e) => setDestinationUrl(e.target.value)}
             onKeyDown={blockEmptyBackspaceNav}
             placeholder="Cole o link aqui"
-            disabled={disabled}
+            disabled={fieldInputDisabled()}
           />
           <button
             type="button"
             className="btn secondary small"
-            disabled={disabled}
+            disabled={fieldButtonDisabled('qr')}
             onClick={handleGerarQr}
           >
             {busy === 'qr' ? 'Salvando…' : 'Salvar'}
@@ -351,12 +458,12 @@ export default function ActivateForm({
             onChange={(e) => setNfcUrl(e.target.value)}
             onKeyDown={blockEmptyBackspaceNav}
             placeholder="Cole o link aqui"
-            disabled={disabled}
+            disabled={fieldInputDisabled()}
           />
           <button
             type="button"
             className="btn secondary small"
-            disabled={disabled}
+            disabled={fieldButtonDisabled('nfc')}
             onClick={handleGerarNfc}
           >
             {busy === 'nfc' ? 'Aproxime a tag…' : 'Salvar'}
@@ -368,9 +475,16 @@ export default function ActivateForm({
       {error && <p className="form-hint error">{error}</p>}
       {message && <p className="form-hint success">{message}</p>}
 
-      <button type="submit" className="btn primary" disabled={disabled}>
+      <button type="submit" className="btn primary" disabled={formLocked}>
         {busy === 'full' ? 'Processando…' : 'Ativar'}
       </button>
+
+      <ChangeBairroConfirmModal
+        open={bairroConfirmOpen}
+        busy={bairroConfirmBusy}
+        onCancel={handleBairroConfirmCancel}
+        onProceed={handleBairroConfirmProceed}
+      />
     </form>
   )
 }

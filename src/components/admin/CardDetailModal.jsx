@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
 import ActivateForm from './ActivateForm.jsx'
+import { isCardActivated } from '../../utils/cardStatus.js'
 import { qrSvgForCode } from '../../utils/qr.js'
 
 function formatModalMeta(card) {
   if (!card?.code) return null
-  const activated = Boolean(card.destination_url)
+  const activated = isCardActivated(card)
   if (!activated) {
     return null
   }
@@ -32,7 +33,7 @@ export default function CardDetailModal({
 
   useEffect(() => {
     setDisplayCard(card)
-  }, [card?.id, card?.destination_url, card?.activated_at, card?.code, card?.nfc_url, card?.nfc_uid, card?.notes])
+  }, [card?.id, card?.code, card?.destination_url, card?.nfc_url, card?.activated_at])
 
   useEffect(() => {
     if (!isOpen || !card || activateOnly) return
@@ -47,7 +48,7 @@ export default function CardDetailModal({
     return () => {
       cancelled = true
     }
-  }, [card, activateOnly, isOpen])
+  }, [card?.code, activateOnly, isOpen])
 
   if (!isOpen) return null
 
@@ -56,8 +57,15 @@ export default function CardDetailModal({
     onSaved?.(updated)
   }
 
-  const modalTitle = activateOnly ? 'Ativar card' : displayCard?.code
-  const headerMeta = activateOnly ? null : formatModalMeta(displayCard)
+  const virginActivateFlow =
+    Boolean(card) && focusActivate && displayCard && !isCardActivated(displayCard)
+
+  const modalTitle = displayCard?.code
+    ? `ID: ${displayCard.code}`
+    : activateOnly
+      ? 'Ativar card'
+      : ''
+  const headerMeta = activateOnly || virginActivateFlow ? null : formatModalMeta(displayCard)
 
   return (
     <Modal
@@ -66,9 +74,9 @@ export default function CardDetailModal({
       headerMeta={headerMeta}
       onClose={onClose}
       wide
-      cardLayout={!activateOnly && Boolean(card)}
+      cardLayout={!activateOnly && Boolean(card) && !virginActivateFlow}
     >
-      {!activateOnly && card && (
+      {!activateOnly && card && !virginActivateFlow && (
         <section className="modal-section modal-section-qr">
           {qrLoading ? (
             <p className="muted">Gerando QR…</p>
@@ -85,7 +93,7 @@ export default function CardDetailModal({
 
       <section className="modal-section modal-section-activate" id="modal-activate-section">
         <ActivateForm
-          card={activateOnly ? null : card}
+          card={activateOnly ? null : displayCard}
           standalone={activateOnly}
           focusLinkOnMount={focusActivate}
           onSaved={handleSaved}

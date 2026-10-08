@@ -1,16 +1,24 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
+
+function safeAdminReturnPath(raw) {
+  if (!raw || !raw.startsWith('/admin')) return '/admin'
+  if (raw.startsWith('//')) return '/admin'
+  return raw
+}
 
 export default function LoginPage() {
   const { session, loading, signIn } = useAuth()
+  const [searchParams] = useSearchParams()
+  const returnTo = safeAdminReturnPath(searchParams.get('returnTo'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
   if (!loading && session) {
-    return <Navigate to="/admin" replace />
+    return <Navigate to={returnTo} replace />
   }
 
   async function handleSubmit(e) {

@@ -23,10 +23,10 @@ async function rasterizeImage(img) {
 }
 
 /** PNG da arte (fundo) para composição PDF/SVG. */
-export async function getBackgroundPngBytes(session) {
+export async function getBackgroundPngBytes(session, pdfRenderScale = ART_PDF_EXPORT_SCALE) {
   const bytes = await fetchArtFileBytes(session.file_path)
   if (session.file_mime === 'application/pdf') {
-    return renderPdfPageToPngBytes(bytes.buffer, ART_PDF_EXPORT_SCALE)
+    return renderPdfPageToPngBytes(bytes.buffer, pdfRenderScale)
   }
   if (session.file_mime === 'image/png') {
     return bytes

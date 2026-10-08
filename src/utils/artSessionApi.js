@@ -5,12 +5,12 @@ import {
   ART_QR_DEFAULT_MARGIN_CM,
 } from '../lib/config.js'
 import { supabase } from '../lib/supabase.js'
-import { defaultQrPlacementBottomRight } from './artUnits.js'
+import { defaultArtFillRect, defaultQrPlacementBottomRight } from './artUnits.js'
 import { getPdfPageSizeCm } from './artPdfRender.js'
 import { heightCmFromWidth } from './artMedia.js'
 
 const SESSION_FIELDS =
-  'id, file_path, file_mime, card_width_cm, card_height_cm, qr_x_cm, qr_y_cm, qr_size_cm, art_aspect_ratio, created_at, updated_at'
+  'id, file_path, file_mime, card_width_cm, card_height_cm, qr_x_cm, qr_y_cm, qr_size_cm, art_aspect_ratio, art_x_cm, art_y_cm, art_width_cm, art_height_cm, created_at, updated_at'
 
 export function defaultDimensionsPayload(aspectRatio) {
   const w = ART_DEFAULT_CARD_WIDTH_CM
@@ -25,6 +25,7 @@ export function defaultDimensionsPayload(aspectRatio) {
     card_width_cm: w,
     card_height_cm: h,
     art_aspect_ratio: aspectRatio ?? w / h,
+    ...defaultArtFillRect(w, h),
     ...qr,
   }
 }
@@ -67,6 +68,10 @@ export async function clearArtSessionFile(session) {
     qr_y_cm: null,
     qr_size_cm: null,
     art_aspect_ratio: null,
+    art_x_cm: null,
+    art_y_cm: null,
+    art_width_cm: null,
+    art_height_cm: null,
   })
 }
 
@@ -109,6 +114,7 @@ export async function uploadArtSessionFile(sessionId, file) {
       card_width_cm: size.widthCm,
       card_height_cm: size.heightCm,
       art_aspect_ratio: size.widthCm / size.heightCm,
+      ...defaultArtFillRect(size.widthCm, size.heightCm),
       qr_x_cm: qr.qr_x_cm,
       qr_y_cm: qr.qr_y_cm,
       qr_size_cm: qr.qr_size_cm,

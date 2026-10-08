@@ -4,8 +4,14 @@ import { detectArtAspectRatio } from '../../../utils/artMedia.js'
 import { ART_DOWNLOAD_MAX } from '../../../lib/config.js'
 import { supabase } from '../../../lib/supabase.js'
 import { composeVirginCardPdf } from '../../../utils/artComposePdf.js'
+import { composeQrOnlyPdf } from '../../../utils/artComposeQrPdf.js'
+import { composeQrOnlyPng } from '../../../utils/artComposeQrPng.js'
 import { composeVirginCardSvg } from '../../../utils/artComposeSvg.js'
-import { downloadArtEntries } from '../../../utils/artZipDownload.js'
+import { assertDownloadWithinLimit, normalizeDownloadList } from '../../../utils/artDownloadLimit.js'
+import { downloadArtEntries, downloadQrCodesZip } from '../../../utils/artZipDownload.js'
+import ArtDownloadQualityModal, {
+  ART_DOWNLOAD_QUALITY,
+} from './ArtDownloadQualityModal.jsx'
 import { normalizeCode } from '../../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../../utils/search.js'
 import {
@@ -70,6 +76,8 @@ export default function ArtSessionCard({
   const [canvasFallbackCode, setCanvasFallbackCode] = useState(null)
   const [downloadBusy, setDownloadBusy] = useState(null)
   const [downloadProgress, setDownloadProgress] = useState('')
+  const [downloadQualityModalFormat, setDownloadQualityModalFormat] = useState(null)
+  const [downloadQualityId, setDownloadQualityId] = useState('standard')
   const [clearingFile, setClearingFile] = useState(false)
   const saveTimer = useRef(null)
   const previewPathRef = useRef(null)
@@ -106,6 +114,7 @@ export default function ArtSessionCard({
       .from('cards')
       .select('code')
       .is('destination_url', null)
+      .is('nfc_url', null)
       .order('loja_num', { ascending: true })
       .limit(1)
       .maybeSingle()
@@ -127,6 +136,7 @@ export default function ArtSessionCard({
       .from('cards')
       .select('id', { count: 'exact', head: true })
       .is('destination_url', null)
+      .is('nfc_url', null)
       .then(({ count, error: err }) => {
         if (cancelled) return
         setVirginCount(err ? null : (count ?? 0))
@@ -229,6 +239,11 @@ export default function ArtSessionCard({
     persistSession(qrFields)
   }
 
+  function handleArtChange(artFields) {
+    setLocal((prev) => ({ ...prev, ...artFields }))
+    persistSession(artFields)
+  }
+
   async function handleConfirmQuantity() {
     setError(null)
     const n = Number(quantity)
@@ -248,6 +263,7 @@ export default function ArtSessionCard({
       .from('cards')
       .select('id, code, notes, destination_url')
       .is('destination_url', null)
+      .is('nfc_url', null)
       .order('loja_num', { ascending: true })
       .limit(n)
 
@@ -308,7 +324,16 @@ export default function ArtSessionCard({
     return null
   }
 
-  async function handleDownload(format) {
+  function openDownloadQualityModal(format) {
+    setDownloadQualityId('standard')
+    setDownloadQualityModalFormat(format)
+  }
+
+  function closeDownloadQualityModal() {
+    setDownloadQualityModalFormat(null)
+  }
+
+  async function handleDownload(format, qualityId = 'standard') {
     setError(null)
     setDownloadProgress('')
     const cardsToRender = resolveCardsToRender()
@@ -316,7 +341,16 @@ export default function ArtSessionCard({
       setError('Confirme a quantidade (OK) ou busque um QR code específico.')
       return
     }
-    const list = Array.isArray(cardsToRender) ? cardsToRender : [cardsToRender]
+    const list = normalizeDownloadList(cardsToRender)
+    try {
+      assertDownloadWithinLimit(list)
+    } catch (e) {
+      setError(e.message)
+      return
+    }
+    const pdfRenderScale =
+      ART_DOWNLOAD_QUALITY[qualityId]?.scale ?? ART_DOWNLOAD_QUALITY.standard.scale
+    const composeOptions = { pdfRenderScale }
 
     setDownloadBusy(format)
     try {
@@ -325,10 +359,10 @@ export default function ArtSessionCard({
       for (let i = 0; i < list.length; i++) {
         setDownloadProgress(`Gerando ${ext.toUpperCase()} ${i + 1} de ${list.length}…`)
         if (format === 'pdf') {
-          const pdfBytes = await composeVirginCardPdf(local, list[i].code)
+          const pdfBytes = await composeVirginCardPdf(local, list[i].code, composeOptions)
           entries.push({ filename: `${list[i].code}.pdf`, content: pdfBytes })
         } else {
-          const svg = await composeVirginCardSvg(local, list[i].code)
+          const svg = await composeVirginCardSvg(local, list[i].code, composeOptions)
           entries.push({ filename: `${list[i].code}.svg`, content: svg })
         }
       }
@@ -342,6 +376,78 @@ export default function ArtSessionCard({
       setDownloadProgress('')
     } catch (e) {
       setError(e.message ?? 'Erro ao baixar.')
+    } finally {
+      setDownloadBusy(null)
+      setDownloadProgress('')
+    }
+  }
+
+  async function handleDownloadQrOnly() {
+    setError(null)
+    setDownloadProgress('')
+    const cardsToRender = resolveCardsToRender()
+    if (!cardsToRender) {
+      setError('Confirme a quantidade (OK) ou busque um QR code específico.')
+      return
+    }
+    const list = normalizeDownloadList(cardsToRender)
+    try {
+      assertDownloadWithinLimit(list)
+    } catch (e) {
+      setError(e.message)
+      return
+    }
+
+    const qrSizeCm = local.qr_size_cm
+    setDownloadBusy('qr-only')
+    try {
+      const entries = []
+      for (let i = 0; i < list.length; i++) {
+        setDownloadProgress(`Gerando QR PDF ${i + 1} de ${list.length}…`)
+        const pdfBytes = await composeQrOnlyPdf(list[i].code, qrSizeCm)
+        entries.push({ filename: `${list[i].code}.pdf`, content: pdfBytes })
+      }
+      setDownloadProgress('Compactando…')
+      await downloadQrCodesZip(entries, 'qrcodes-pdf.zip')
+      setDownloadProgress('')
+    } catch (e) {
+      setError(e.message ?? 'Erro ao baixar QR codes.')
+    } finally {
+      setDownloadBusy(null)
+      setDownloadProgress('')
+    }
+  }
+
+  async function handleDownloadQrPng() {
+    setError(null)
+    setDownloadProgress('')
+    const cardsToRender = resolveCardsToRender()
+    if (!cardsToRender) {
+      setError('Confirme a quantidade (OK) ou busque um QR code específico.')
+      return
+    }
+    const list = normalizeDownloadList(cardsToRender)
+    try {
+      assertDownloadWithinLimit(list)
+    } catch (e) {
+      setError(e.message)
+      return
+    }
+
+    const qrSizeCm = local.qr_size_cm
+    setDownloadBusy('qr-png')
+    try {
+      const entries = []
+      for (let i = 0; i < list.length; i++) {
+        setDownloadProgress(`Gerando QR PNG ${i + 1} de ${list.length}…`)
+        const pngBytes = await composeQrOnlyPng(list[i].code, qrSizeCm)
+        entries.push({ filename: `${list[i].code}.png`, content: pngBytes })
+      }
+      setDownloadProgress('Compactando…')
+      await downloadQrCodesZip(entries, 'qrcodes-png.zip')
+      setDownloadProgress('')
+    } catch (e) {
+      setError(e.message ?? 'Erro ao baixar QR codes.')
     } finally {
       setDownloadBusy(null)
       setDownloadProgress('')
@@ -364,29 +470,7 @@ export default function ArtSessionCard({
   const quantityLocked = Boolean(specificCard)
 
   return (
-    <article className="art-session-card">
-      {(local.file_path || canDelete) && (
-        <header className="art-session-header art-session-header-compact">
-          <div className="art-session-header-actions">
-            {local.file_path && (
-              <button
-                type="button"
-                className="btn secondary small danger"
-                disabled={clearingFile}
-                onClick={handleClearFile}
-              >
-                {clearingFile ? 'Excluindo…' : 'Excluir arquivo'}
-              </button>
-            )}
-            {canDelete && (
-              <button type="button" className="btn secondary small danger" onClick={handleDeleteSession}>
-                Excluir sessão
-              </button>
-            )}
-          </div>
-        </header>
-      )}
-
+    <article className={`art-session-card${isReady && previewUrl ? ' art-session-card--editing' : ''}`}>
       {!local.file_path && (
         <div className="art-upload-zone">
           <p className="art-session-title art-upload-session-label">Sessão {sessionNumber}</p>
@@ -409,6 +493,17 @@ export default function ArtSessionCard({
         <div className="art-session-layout">
           <aside className="art-session-sidebar">
             <h2 className="art-session-title">Sessão {sessionNumber}</h2>
+
+            {local.file_path && (
+              <button
+                type="button"
+                className="btn secondary small danger art-sidebar-action"
+                disabled={clearingFile}
+                onClick={handleClearFile}
+              >
+                {clearingFile ? 'Excluindo…' : 'Excluir arquivo'}
+              </button>
+            )}
 
             <label className="art-download-field">
               Insira a quantidade
@@ -483,7 +578,7 @@ export default function ArtSessionCard({
                 type="button"
                 className="btn art-download-format-btn"
                 disabled={downloadDisabled}
-                onClick={() => handleDownload('pdf')}
+                onClick={() => openDownloadQualityModal('pdf')}
                 aria-label="Baixar PDF"
               >
                 <DownloadIcon />
@@ -493,7 +588,7 @@ export default function ArtSessionCard({
                 type="button"
                 className="btn art-download-format-btn"
                 disabled={downloadDisabled}
-                onClick={() => handleDownload('svg')}
+                onClick={() => openDownloadQualityModal('svg')}
                 aria-label="Baixar SVG"
               >
                 <DownloadIcon />
@@ -501,8 +596,36 @@ export default function ArtSessionCard({
               </button>
             </div>
 
+            <button
+              type="button"
+              className="btn secondary art-download-qr-only-btn"
+              disabled={downloadDisabled}
+              onClick={handleDownloadQrOnly}
+            >
+              {downloadBusy === 'qr-only' ? 'Gerando…' : 'Baixar somente QR code'}
+            </button>
+
+            <button
+              type="button"
+              className="btn secondary art-download-qr-only-btn"
+              disabled={downloadDisabled}
+              onClick={handleDownloadQrPng}
+            >
+              {downloadBusy === 'qr-png' ? 'Gerando…' : 'Baixar QR code (PNG)'}
+            </button>
+
+            {canDelete && (
+              <button
+                type="button"
+                className="btn secondary small danger art-sidebar-action"
+                onClick={handleDeleteSession}
+              >
+                Excluir sessão
+              </button>
+            )}
+
             {downloadProgress && <p className="form-hint">{downloadProgress}</p>}
-            {saving && <p className="muted">Salvando posição do QR…</p>}
+            {saving && <p className="muted">Salvando…</p>}
           </aside>
 
           <div className="art-session-canvas-panel">
@@ -511,12 +634,27 @@ export default function ArtSessionCard({
               previewUrl={previewUrl}
               previewCode={previewCode}
               onQrChange={handleQrChange}
+              onArtChange={handleArtChange}
             />
           </div>
         </div>
       )}
 
       {error && <p className="form-hint error">{error}</p>}
+
+      <ArtDownloadQualityModal
+        open={Boolean(downloadQualityModalFormat)}
+        format={downloadQualityModalFormat ?? 'pdf'}
+        qualityId={downloadQualityId}
+        onQualityChange={setDownloadQualityId}
+        onClose={closeDownloadQualityModal}
+        onConfirm={() => {
+          const format = downloadQualityModalFormat
+          const qualityId = downloadQualityId
+          closeDownloadQualityModal()
+          if (format) handleDownload(format, qualityId)
+        }}
+      />
     </article>
   )
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { supabase } from '../../lib/supabase.js'
 import { normalizeCode } from '../../utils/codes.js'
 
@@ -12,11 +13,17 @@ const MESSAGES = {
     title: 'QR code virgem.',
     body: null,
   },
+  paused: {
+    title: 'Serviço pausado',
+    body: 'Serviço temporariamente pausado. Acione a empresa responsável.',
+  },
 }
 
 export default function RedirectPage() {
   const { codigo } = useParams()
+  const { session, loading: authLoading } = useAuth()
   const [state, setState] = useState({ kind: 'loading' })
+  const [adminActivateCode, setAdminActivateCode] = useState(null)
 
   useEffect(() => {
     const code = normalizeCode(codigo)
@@ -47,7 +54,17 @@ export default function RedirectPage() {
         }
 
         if (data.status === 'not_activated') {
-          setState({ kind: 'error', ...MESSAGES.not_activated })
+          setAdminActivateCode(code)
+          setState({ kind: 'virgin' })
+          return
+        }
+
+        if (data.status === 'paused') {
+          setState({
+            kind: 'error',
+            title: MESSAGES.paused.title,
+            body: data.message ?? MESSAGES.paused.body,
+          })
           return
         }
 
@@ -58,6 +75,24 @@ export default function RedirectPage() {
       cancelled = true
     }
   }, [codigo])
+
+  if (state.kind === 'virgin' && adminActivateCode) {
+    if (authLoading) {
+      return (
+        <div className="public-page">
+          <div className="public-card">
+            <p>Carregando…</p>
+          </div>
+        </div>
+      )
+    }
+    const adminPath = `/admin?code=${encodeURIComponent(adminActivateCode)}`
+    if (session) {
+      return <Navigate to={adminPath} replace />
+    }
+    const returnTo = encodeURIComponent(adminPath)
+    return <Navigate to={`/admin/login?returnTo=${returnTo}`} replace />
+  }
 
   if (state.kind === 'loading' || state.kind === 'redirecting') {
     return (
