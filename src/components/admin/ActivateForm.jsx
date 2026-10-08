@@ -321,6 +321,7 @@ export default function ActivateForm({
       storedNfcUrl: existing.nfc_url,
       storedNfcUid: existing.nfc_uid,
       storedShortCode: existing.short_code,
+      forceTagWrite: true,
     })
     setBusy(null)
 
@@ -334,11 +335,14 @@ export default function ActivateForm({
     }
 
     setNfcDebug(null)
-    finishSuccess(
-      result.data,
-      result.savedUrlOnly ? 'Link NFC salvo.' : 'NFC gravado com sucesso.',
-      { tone: 'nfc' },
-    )
+    const nfcSuccessText = result.hardwareSkipped
+      ? 'Link NFC salvo no sistema (a tag não foi regravada).'
+      : result.savedUrlOnly
+        ? 'Link NFC salvo.'
+        : 'NFC gravado com sucesso.'
+    finishSuccess(result.data, nfcSuccessText, {
+      tone: result.hardwareSkipped ? null : 'nfc',
+    })
   }
 
   async function handleAtivacaoCompleta(e) {
@@ -430,17 +434,17 @@ export default function ActivateForm({
       setNfcHint('Link NFC salvo. Use Chrome no Android para gravar a tag física.')
     }
 
-    const nfcAlreadyOnTag =
+    const nfcDestOnlyUpdate =
       nfcTrimmed && !isNfcTagWriteRequired(existing, nfcTrimmed) && isNfcSupported()
-    const showNfcSuccessTone = nfcAlreadyOnTag || Boolean(result.data?.nfc_uid)
+    if (nfcDestOnlyUpdate) {
+      setNfcHint(
+        'Destino NFC atualizado no servidor. A tag física não precisa ser gravada de novo (mesmo link curto).',
+      )
+    }
     finishSuccess(
       result.data,
-      nfcAlreadyOnTag
-        ? 'NFC gravado com sucesso.'
-        : wasActivated
-          ? 'Card atualizado com sucesso.'
-          : 'Card ativado com sucesso.',
-      showNfcSuccessTone ? { tone: 'nfc' } : {},
+      wasActivated ? 'Card atualizado com sucesso.' : 'Card ativado com sucesso.',
+      {},
     )
   }
 

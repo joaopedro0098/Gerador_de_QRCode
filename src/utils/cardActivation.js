@@ -128,12 +128,17 @@ export async function saveNfcUrlOnly(
     .single()
 }
 
-/** Tag física só precisa ser gravada se ainda não há UID (destino muda via short_links). */
+/**
+ * No fluxo Ativar: grava tag se ainda não há UID ou se nunca houve short_code (tag pode ter URL antiga).
+ * Salvar NFC usa forceTagWrite e sempre grava quando há NFC no aparelho.
+ */
 export function isNfcTagWriteRequired(storedCard, nfcUrl) {
   const url = nfcUrl.trim()
   if (!url || !isValidHttpsUrl(url)) return false
   if (!isNfcSupported()) return false
-  return !storedCard?.nfc_uid?.trim()
+  if (!storedCard?.nfc_uid?.trim()) return true
+  if (!storedCard?.short_code?.trim()) return true
+  return false
 }
 
 /** Grava tag NFC e persiste nfc_url + nfc_uid. Ativa se ainda virgem. */
@@ -150,6 +155,7 @@ export async function activateNfc(
     storedNfcUrl = null,
     storedNfcUid = null,
     storedShortCode = null,
+    forceTagWrite = false,
   } = {},
 ) {
   const url = nfcUrl.trim()
@@ -166,8 +172,12 @@ export async function activateNfc(
     }).then((result) => ({ ...result, cancelled: false, savedUrlOnly: true }))
   }
 
-  const storedCard = { nfc_url: storedNfcUrl, nfc_uid: storedNfcUid }
-  if (!isNfcTagWriteRequired(storedCard, url)) {
+  const storedCard = {
+    nfc_url: storedNfcUrl,
+    nfc_uid: storedNfcUid,
+    short_code: storedShortCode,
+  }
+  if (!forceTagWrite && !isNfcTagWriteRequired(storedCard, url)) {
     nfcWriteSession?.abort()
     return saveNfcUrlOnly(supabase, cardId, url, {
       locationBairroId,
