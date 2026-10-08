@@ -13,11 +13,8 @@ import ChangeBairroConfirmModal from './ChangeBairroConfirmModal.jsx'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { isActiveCardBairroChange } from '../../utils/cardStatus.js'
 import { blockEmptyBackspaceNav } from '../../utils/formInput.js'
-import {
-  buildNfcWriteDiagnostic,
-  createNfcWriteSession,
-  isNfcSupported,
-} from '../../utils/nfc.js'
+import { createNfcWriteSession, isNfcSupported } from '../../utils/nfc.js'
+import { createNfcShortUrlPromise } from '../../utils/shortLinks.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
 export default function ActivateForm({
@@ -38,7 +35,6 @@ export default function ActivateForm({
   const [existing, setExisting] = useState(null)
   const [locationBairroId, setLocationBairroId] = useState(null)
   const [nfcHint, setNfcHint] = useState(null)
-  const [nfcDebugPanel, setNfcDebugPanel] = useState(null)
   const [successTone, setSuccessTone] = useState(null)
   const [bairroConfirmOpen, setBairroConfirmOpen] = useState(false)
   const [bairroConfirmBusy, setBairroConfirmBusy] = useState(false)
@@ -267,54 +263,11 @@ export default function ActivateForm({
     )
   }
 
-  const NFC_TEST_SHORT_URL = 'https://example.com'
-
-  async function runNfcWriteSessionOnly(url) {
-    setNfcDebugPanel(null)
-    if (!isNfcSupported()) {
-      setNfcDebugPanel(
-        buildNfcWriteDiagnostic({ name: 'UNSUPPORTED', message: 'UNSUPPORTED' }, undefined, url),
-      )
-      return
-    }
-
-    let session = null
-    try {
-      session = createNfcWriteSession(url)
-    } catch (err) {
-      setNfcDebugPanel(
-        err?.nfcWriteDiagnostic ?? buildNfcWriteDiagnostic(err, undefined, url),
-      )
-      return
-    }
-
-    setBusy('nfc-test')
-    try {
-      const uid = await session.waitForWrite()
-      setNfcDebugPanel({
-        success: true,
-        uid,
-        ...buildNfcWriteDiagnostic({ name: 'OK', message: 'write ok' }, undefined, url),
-      })
-    } catch (err) {
-      setNfcDebugPanel(
-        err?.nfcWriteDiagnostic ?? buildNfcWriteDiagnostic(err, undefined, url),
-      )
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  function handleNfcTestCurto() {
-    runNfcWriteSessionOnly(NFC_TEST_SHORT_URL)
-  }
-
   async function handleGerarNfc() {
     setError(null)
     setMessage(null)
     setSuccessTone(null)
     setNfcHint(null)
-    setNfcDebugPanel(null)
     if (!existing) {
       setError('Não foi possível carregar este código.')
       return
@@ -335,9 +288,16 @@ export default function ActivateForm({
       return
     }
 
+    const shortUrlPromise = createNfcShortUrlPromise(
+      supabase,
+      existing.id,
+      url,
+      existing.short_code,
+    )
+
     let nfcWriteSession = null
     try {
-      nfcWriteSession = createNfcWriteSession(url)
+      nfcWriteSession = createNfcWriteSession(shortUrlPromise)
     } catch {
       setNfcHint('Use Chrome no Android para gravar NFC.')
       return
@@ -355,6 +315,10 @@ export default function ActivateForm({
       wasActivated,
       existingBairroId: existing.location_bairro_id,
       nfcWriteSession,
+      shortUrlPromise,
+      storedNfcUrl: existing.nfc_url,
+      storedNfcUid: existing.nfc_uid,
+      storedShortCode: existing.short_code,
     })
     setBusy(null)
 
@@ -363,13 +327,9 @@ export default function ActivateForm({
     }
     if (result.error) {
       setError(result.error.message)
-      if (result.error.nfcWriteDiagnostic) {
-        setNfcDebugPanel(result.error.nfcWriteDiagnostic)
-      }
       return
     }
 
-    setNfcDebugPanel(null)
     finishSuccess(
       result.data,
       result.savedUrlOnly ? 'Link NFC salvo.' : 'NFC gravado com sucesso.',
@@ -397,14 +357,21 @@ export default function ActivateForm({
     const qrTrimmed = destinationUrl.trim()
     const nfcTrimmed = nfcUrl.trim()
     let nfcWriteSession = null
+    let shortUrlPromise = null
     if (
       nfcTrimmed &&
       isValidHttpsUrl(nfcTrimmed) &&
       isNfcSupported() &&
       isNfcTagWriteRequired(existing, nfcTrimmed)
     ) {
+      shortUrlPromise = createNfcShortUrlPromise(
+        supabase,
+        existing.id,
+        nfcTrimmed,
+        existing.short_code,
+      )
       try {
-        nfcWriteSession = createNfcWriteSession(nfcTrimmed)
+        nfcWriteSession = createNfcWriteSession(shortUrlPromise)
       } catch {
         setNfcHint('Use Chrome no Android para gravar NFC.')
         return
@@ -426,8 +393,10 @@ export default function ActivateForm({
       wasActivated,
       existingBairroId: existing.location_bairro_id,
       nfcWriteSession,
+      shortUrlPromise,
       storedNfcUrl: existing.nfc_url,
       storedNfcUid: existing.nfc_uid,
+      storedShortCode: existing.short_code,
     })
 
     setBusy(null)
@@ -438,9 +407,6 @@ export default function ActivateForm({
         onSaved?.(result.data)
       }
       setError(result.error.message)
-      if (result.step === 'nfc' && result.error.nfcWriteDiagnostic) {
-        setNfcDebugPanel(result.error.nfcWriteDiagnostic)
-      }
       return
     }
 
@@ -482,12 +448,7 @@ export default function ActivateForm({
   function fieldButtonDisabled(forField) {
     if (formUnavailable) return true
     if (busy === 'full') return true
-    if (busy === 'nfc-test') return true
     return busy === forField
-  }
-
-  function nfcActionsDisabled() {
-    return formUnavailable || busy === 'full' || busy === 'nfc' || busy === 'nfc-test'
   }
 
   return (
@@ -591,20 +552,8 @@ export default function ActivateForm({
           >
             {busy === 'nfc' ? 'Aproxime a tag…' : 'Salvar'}
           </button>
-          <button
-            type="button"
-            className="btn secondary small"
-            disabled={nfcActionsDisabled()}
-            onClick={handleNfcTestCurto}
-          >
-            {busy === 'nfc-test' ? 'Aproxime…' : 'Teste curto'}
-          </button>
         </div>
       </label>
-
-      {nfcDebugPanel && (
-        <pre className="nfc-debug-panel">{JSON.stringify(nfcDebugPanel, null, 2)}</pre>
-      )}
 
       {nfcHint && <p className="form-hint">{nfcHint}</p>}
       {error && <p className="form-hint error">{error}</p>}

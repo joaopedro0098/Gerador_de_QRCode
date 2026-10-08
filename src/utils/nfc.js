@@ -8,6 +8,9 @@ function mapNfcError(err) {
   const name = String(err?.name ?? '')
   const msg = String(err?.message ?? err ?? '').toLowerCase()
 
+  if (name === 'ShortLinkError') {
+    return err.message || 'Não foi possível gerar o link curto. Tente novamente.'
+  }
   if (err?.message === 'TIMEOUT') {
     return 'Tempo esgotado. Encoste a tag no centro traseiro do celular e tente de novo.'
   }
@@ -41,39 +44,44 @@ function mapNfcError(err) {
   return `Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG. (código: ${err?.name || 'desconhecido'})`
 }
 
-/** Payload espelhado no console.error('[NFC write]', …) — debug temporário na UI. */
-export function buildNfcWriteDiagnostic(err, event, url) {
+function buildNfcWriteDiagnostic(err, event, urlForLog) {
+  const url = typeof urlForLog === 'string' ? urlForLog : '(pending)'
   return {
     name: err?.name,
     message: err?.message,
     url,
-    urlBytes: new TextEncoder().encode(url).length,
-    isSecureContext: window.isSecureContext,
+    urlBytes: typeof urlForLog === 'string' ? new TextEncoder().encode(urlForLog).length : null,
+    isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : null,
     serialNumber: event?.serialNumber,
     tagRecords: event?.message?.records?.length,
   }
 }
 
+function toUrlPromise(urlOrPromise) {
+  if (urlOrPromise != null && typeof urlOrPromise.then === 'function') {
+    return urlOrPromise
+  }
+  return Promise.resolve(urlOrPromise)
+}
+
 /**
  * Inicia scan() no mesmo gesto do clique (obrigatório no Chrome).
- * Depois chame waitForWrite() — pode await outras coisas antes, desde que scan já tenha começado.
+ * urlOrPromise: URL final ou Promise<string> resolvida no evento reading antes do write.
  */
-export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {}) {
+export function createNfcWriteSession(urlOrPromise, { timeoutMs = DEFAULT_SCAN_MS } = {}) {
   if (!isNfcSupported()) {
     throw new Error('UNSUPPORTED')
   }
 
+  const urlPromise = toUrlPromise(urlOrPromise)
   const ndef = new NDEFReader()
-  const message = {
-    records: [{ recordType: 'url', data: url }],
-  }
 
   let aborted = false
   let scanError = null
   let timer = null
 
-  function stampNfcWriteDiagnostic(err, event) {
-    const payload = buildNfcWriteDiagnostic(err, event, url)
+  function stampNfcWriteDiagnostic(err, event, resolvedUrl) {
+    const payload = buildNfcWriteDiagnostic(err, event, resolvedUrl)
     console.error('[NFC write]', payload)
     if (err && typeof err === 'object') {
       err.nfcWriteDiagnostic = payload
@@ -82,7 +90,7 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
   }
 
   const scanPromise = ndef.scan().catch((err) => {
-    stampNfcWriteDiagnostic(err, undefined)
+    stampNfcWriteDiagnostic(err, undefined, '(pending)')
     scanError = err
     throw err
   })
@@ -90,12 +98,12 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
   const writePromise = new Promise((resolve, reject) => {
     timer = window.setTimeout(() => {
       const timeoutErr = new Error('TIMEOUT')
-      stampNfcWriteDiagnostic(timeoutErr, undefined)
+      stampNfcWriteDiagnostic(timeoutErr, undefined, '(pending)')
       reject(timeoutErr)
     }, timeoutMs)
 
-    const fail = (err, event) => {
-      stampNfcWriteDiagnostic(err, event)
+    const fail = (err, event, resolvedUrl) => {
+      stampNfcWriteDiagnostic(err, event, resolvedUrl)
       window.clearTimeout(timer)
       timer = null
       reject(err)
@@ -113,7 +121,7 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
         console.error('[NFC readingerror]', e)
         if (aborted) return
         const readErr = new Error('READ_ERROR')
-        fail(readErr, e)
+        fail(readErr, e, '(pending)')
       },
       { once: true },
     )
@@ -122,11 +130,21 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
       'reading',
       async (event) => {
         if (aborted) return
+        let finalUrl
         try {
-          await ndef.write(message, { overwrite: true })
+          finalUrl = await urlPromise
+        } catch (urlErr) {
+          fail(urlErr, event, '(pending)')
+          return
+        }
+        try {
+          await ndef.write(
+            { records: [{ recordType: 'url', data: finalUrl }] },
+            { overwrite: true },
+          )
           succeed(normalizeUid(event.serialNumber))
         } catch (writeErr) {
-          fail(writeErr, event)
+          fail(writeErr, event, finalUrl)
         }
       },
       { once: true },
