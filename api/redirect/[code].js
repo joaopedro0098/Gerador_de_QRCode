@@ -8,6 +8,45 @@ function homeUrl(req) {
   return host ? `${proto}://${host}/` : '/'
 }
 
+function supabaseEnv() {
+  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const anonKey =
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_KEY
+  const key = serviceKey || anonKey
+  if (!url || !key) return null
+  return { url, key }
+}
+
+async function resolveTarget(supabase, code) {
+  const { data: rpcData, error: rpcError } = await supabase.rpc('resolve_short_link', {
+    p_code: code,
+  })
+  if (!rpcError && rpcData) {
+    return { targetUrl: rpcData, lookupError: null }
+  }
+
+  const { data, error } = await supabase
+    .from('short_links')
+    .select('target_url, clicks')
+    .eq('code', code)
+    .maybeSingle()
+
+  if (error || !data?.target_url) {
+    return { targetUrl: null, lookupError: error ?? rpcError ?? null }
+  }
+
+  supabase
+    .from('short_links')
+    .update({ clicks: (data.clicks ?? 0) + 1 })
+    .eq('code', code)
+    .then(() => {})
+
+  return { targetUrl: data.target_url, lookupError: null }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     res.statusCode = 405
@@ -22,36 +61,25 @@ export default async function handler(req, res) {
     return
   }
 
-  const url = process.env.VITE_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceKey) {
+  const env = supabaseEnv()
+  if (!env) {
     res.writeHead(302, { Location: homeUrl(req) })
     res.end()
     return
   }
 
-  const supabase = createClient(url, serviceKey, {
+  const supabase = createClient(env.url, env.key, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  const { data, error } = await supabase
-    .from('short_links')
-    .select('target_url, clicks')
-    .eq('code', code)
-    .maybeSingle()
+  const { targetUrl } = await resolveTarget(supabase, code)
 
-  if (error || !data?.target_url) {
+  if (!targetUrl) {
     res.writeHead(302, { Location: homeUrl(req) })
     res.end()
     return
   }
 
-  supabase
-    .from('short_links')
-    .update({ clicks: (data.clicks ?? 0) + 1 })
-    .eq('code', code)
-    .then(() => {})
-
-  res.writeHead(302, { Location: data.target_url })
+  res.writeHead(302, { Location: targetUrl })
   res.end()
 }

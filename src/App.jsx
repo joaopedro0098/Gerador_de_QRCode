@@ -7,6 +7,7 @@ import ArtEditorPage from './pages/admin/ArtEditorPage.jsx'
 import CardsListPage from './pages/admin/CardsListPage.jsx'
 import LoginPage from './pages/admin/LoginPage.jsx'
 import RedirectPage from './pages/public/RedirectPage.jsx'
+import ShortRedirectPage from './pages/public/ShortRedirectPage.jsx'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/c/:codigo" element={<RedirectPage />} />
+          <Route path="/r/:code" element={<ShortRedirectPage />} />
           <Route path="/admin/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
