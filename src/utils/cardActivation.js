@@ -1,4 +1,4 @@
-import { getNfcUserMessage, isNfcSupported, normalizeUid } from './nfc.js'
+import { buildNfcWriteDiagnostic, getNfcUserMessage, isNfcSupported, normalizeUid } from './nfc.js'
 import { isCardActivated } from './cardStatus.js'
 import { isValidHttpsUrl } from './validate.js'
 
@@ -153,7 +153,15 @@ export async function activateNfc(
     }
     uid = await nfcWriteSession.waitForWrite()
   } catch (err) {
-    return { data: null, error: { message: getNfcUserMessage(err) }, cancelled: false }
+    return {
+      data: null,
+      error: {
+        message: getNfcUserMessage(err),
+        nfcWriteDiagnostic:
+          err?.nfcWriteDiagnostic ?? buildNfcWriteDiagnostic(err, undefined, url),
+      },
+      cancelled: false,
+    }
   }
 
   const { data: other, error: lookupError } = await lookupCardByNfcUid(supabase, uid)

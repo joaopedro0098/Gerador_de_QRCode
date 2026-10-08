@@ -41,6 +41,19 @@ function mapNfcError(err) {
   return `Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG. (código: ${err?.name || 'desconhecido'})`
 }
 
+/** Payload espelhado no console.error('[NFC write]', …) — debug temporário na UI. */
+export function buildNfcWriteDiagnostic(err, event, url) {
+  return {
+    name: err?.name,
+    message: err?.message,
+    url,
+    urlBytes: new TextEncoder().encode(url).length,
+    isSecureContext: window.isSecureContext,
+    serialNumber: event?.serialNumber,
+    tagRecords: event?.message?.records?.length,
+  }
+}
+
 /**
  * Inicia scan() no mesmo gesto do clique (obrigatório no Chrome).
  * Depois chame waitForWrite() — pode await outras coisas antes, desde que scan já tenha começado.
@@ -59,30 +72,30 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
   let scanError = null
   let timer = null
 
-  function logNfcWriteDiagnostic(err, event) {
-    console.error('[NFC write]', {
-      name: err?.name,
-      message: err?.message,
-      url,
-      urlBytes: new TextEncoder().encode(url).length,
-      isSecureContext: window.isSecureContext,
-      serialNumber: event?.serialNumber,
-      tagRecords: event?.message?.records?.length,
-    })
+  function stampNfcWriteDiagnostic(err, event) {
+    const payload = buildNfcWriteDiagnostic(err, event, url)
+    console.error('[NFC write]', payload)
+    if (err && typeof err === 'object') {
+      err.nfcWriteDiagnostic = payload
+    }
+    return payload
   }
 
   const scanPromise = ndef.scan().catch((err) => {
-    logNfcWriteDiagnostic(err, undefined)
+    stampNfcWriteDiagnostic(err, undefined)
     scanError = err
     throw err
   })
 
   const writePromise = new Promise((resolve, reject) => {
     timer = window.setTimeout(() => {
-      reject(new Error('TIMEOUT'))
+      const timeoutErr = new Error('TIMEOUT')
+      stampNfcWriteDiagnostic(timeoutErr, undefined)
+      reject(timeoutErr)
     }, timeoutMs)
 
-    const fail = (err) => {
+    const fail = (err, event) => {
+      stampNfcWriteDiagnostic(err, event)
       window.clearTimeout(timer)
       timer = null
       reject(err)
@@ -99,7 +112,8 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
       (e) => {
         console.error('[NFC readingerror]', e)
         if (aborted) return
-        fail(new Error('READ_ERROR'))
+        const readErr = new Error('READ_ERROR')
+        fail(readErr, e)
       },
       { once: true },
     )
@@ -112,8 +126,7 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
           await ndef.write(message, { overwrite: true })
           succeed(normalizeUid(event.serialNumber))
         } catch (writeErr) {
-          logNfcWriteDiagnostic(writeErr, event)
-          fail(writeErr)
+          fail(writeErr, event)
         }
       },
       { once: true },

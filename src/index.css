@@ -1099,6 +1099,19 @@ input:focus {
   margin-bottom: 0.65rem;
 }
 
+/* TEMP: debug NFC — remover depois */
+.nfc-debug-panel {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 220px;
+}
+
 .location-layer-head {
   display: flex;
   align-items: center;
