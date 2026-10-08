@@ -29,10 +29,16 @@ function mapNfcError(err) {
   if (name === 'InvalidStateError') {
     return 'Toque Salvar de novo e encoste a tag quando pedir (mantenha o Chrome aberto).'
   }
+  if (name === 'NetworkError') {
+    return 'A gravação foi interrompida. Mantenha a tag encostada e parada até concluir.'
+  }
+  if (name === 'AbortError') {
+    return 'Gravação cancelada. Toque Salvar e encoste a tag de novo.'
+  }
   if (msg.includes('ndefreader')) {
     return 'Use Chrome no Android, em HTTPS, com NFC ligado.'
   }
-  return 'Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG.'
+  return `Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG. (código: ${err?.name || 'desconhecido'})`
 }
 
 /**
@@ -51,30 +57,47 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
 
   let aborted = false
   let scanError = null
+  let timer = null
+
+  function logNfcWriteDiagnostic(err, event) {
+    console.error('[NFC write]', {
+      name: err?.name,
+      message: err?.message,
+      url,
+      urlBytes: new TextEncoder().encode(url).length,
+      isSecureContext: window.isSecureContext,
+      serialNumber: event?.serialNumber,
+      tagRecords: event?.message?.records?.length,
+    })
+  }
 
   const scanPromise = ndef.scan().catch((err) => {
+    logNfcWriteDiagnostic(err, undefined)
     scanError = err
     throw err
   })
 
   const writePromise = new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
+    timer = window.setTimeout(() => {
       reject(new Error('TIMEOUT'))
     }, timeoutMs)
 
     const fail = (err) => {
       window.clearTimeout(timer)
+      timer = null
       reject(err)
     }
 
     const succeed = (uid) => {
       window.clearTimeout(timer)
+      timer = null
       resolve(uid)
     }
 
     ndef.addEventListener(
       'readingerror',
-      () => {
+      (e) => {
+        console.error('[NFC readingerror]', e)
         if (aborted) return
         fail(new Error('READ_ERROR'))
       },
@@ -89,6 +112,7 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
           await ndef.write(message, { overwrite: true })
           succeed(normalizeUid(event.serialNumber))
         } catch (writeErr) {
+          logNfcWriteDiagnostic(writeErr, event)
           fail(writeErr)
         }
       },
@@ -99,6 +123,10 @@ export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {})
   return {
     abort() {
       aborted = true
+      if (timer != null) {
+        window.clearTimeout(timer)
+        timer = null
+      }
     },
     async waitForWrite() {
       await scanPromise
