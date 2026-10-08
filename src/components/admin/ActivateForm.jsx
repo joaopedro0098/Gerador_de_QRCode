@@ -35,6 +35,7 @@ export default function ActivateForm({
   const [existing, setExisting] = useState(null)
   const [locationBairroId, setLocationBairroId] = useState(null)
   const [nfcHint, setNfcHint] = useState(null)
+  const [nfcDebug, setNfcDebug] = useState(null)
   const [successTone, setSuccessTone] = useState(null)
   const [bairroConfirmOpen, setBairroConfirmOpen] = useState(false)
   const [bairroConfirmBusy, setBairroConfirmBusy] = useState(false)
@@ -268,6 +269,7 @@ export default function ActivateForm({
     setMessage(null)
     setSuccessTone(null)
     setNfcHint(null)
+    setNfcDebug(null)
     if (!existing) {
       setError('Não foi possível carregar este código.')
       return
@@ -327,9 +329,11 @@ export default function ActivateForm({
     }
     if (result.error) {
       setError(result.error.message)
+      setNfcDebug(result.error.debug ?? null)
       return
     }
 
+    setNfcDebug(null)
     finishSuccess(
       result.data,
       result.savedUrlOnly ? 'Link NFC salvo.' : 'NFC gravado com sucesso.',
@@ -343,6 +347,7 @@ export default function ActivateForm({
     setMessage(null)
     setSuccessTone(null)
     setNfcHint(null)
+    setNfcDebug(null)
 
     if (!existing) {
       setError(
@@ -407,6 +412,9 @@ export default function ActivateForm({
         onSaved?.(result.data)
       }
       setError(result.error.message)
+      if (result.step === 'nfc') {
+        setNfcDebug(result.error.debug ?? null)
+      }
       return
     }
 
@@ -554,6 +562,12 @@ export default function ActivateForm({
           </button>
         </div>
       </label>
+
+      {nfcDebug && (
+        <pre className="nfc-debug-panel" aria-label="Debug link curto NFC">
+          {JSON.stringify(nfcDebug, null, 2)}
+        </pre>
+      )}
 
       {nfcHint && <p className="form-hint">{nfcHint}</p>}
       {error && <p className="form-hint error">{error}</p>}

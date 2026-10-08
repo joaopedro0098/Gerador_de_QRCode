@@ -32,6 +32,81 @@ function isUniqueViolation(error) {
   return error?.code === '23505'
 }
 
+function pgDebug(error, extra = {}) {
+  if (!error) return { ...extra }
+  return {
+    ...extra,
+    pgCode: error.code ?? null,
+    pgMessage: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  }
+}
+
+async function syncCardShortCode(supabase, cardId, code) {
+  return supabase.from('cards').update({ short_code: code }).eq('id', cardId).select('short_code').single()
+}
+
+/** Reutiliza linha em short_links já ligada a este card (índice único em card_id). */
+async function ensureExistingRowForCard(supabase, cardId, target) {
+  const { data: row, error: fetchError } = await supabase
+    .from('short_links')
+    .select('code')
+    .eq('card_id', cardId)
+    .maybeSingle()
+
+  if (fetchError) {
+    return {
+      shortUrl: null,
+      code: null,
+      error: {
+        message: 'Não foi possível carregar o link curto deste card.',
+        debug: pgDebug(fetchError, { step: 'fetch_by_card_id' }),
+      },
+    }
+  }
+
+  if (!row?.code) {
+    return null
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('short_links')
+    .update({ target_url: target })
+    .eq('card_id', cardId)
+    .select('code')
+    .single()
+
+  if (updateError || !updated?.code) {
+    return {
+      shortUrl: null,
+      code: null,
+      error: {
+        message: 'Não foi possível atualizar o link curto. Tente novamente.',
+        debug: pgDebug(updateError, { step: 'update_by_card_id', existingCode: row.code }),
+      },
+    }
+  }
+
+  const { error: cardError } = await syncCardShortCode(supabase, cardId, updated.code)
+  if (cardError) {
+    return {
+      shortUrl: null,
+      code: null,
+      error: {
+        message: 'Não foi possível associar o link curto ao card.',
+        debug: pgDebug(cardError, { step: 'sync_short_code', code: updated.code }),
+      },
+    }
+  }
+
+  return {
+    shortUrl: buildShortRedirectUrl(updated.code),
+    code: updated.code,
+    error: null,
+  }
+}
+
 /**
  * Cria ou atualiza short_link para o card. Reutiliza short_code existente.
  * @returns {{ shortUrl, code, error }}
@@ -63,7 +138,10 @@ export async function ensureShortLinkForCard(supabase, cardId, targetUrl, existi
       return {
         shortUrl: null,
         code: null,
-        error: { message: 'Não foi possível atualizar o link curto. Tente novamente.' },
+        error: {
+          message: 'Não foi possível atualizar o link curto. Tente novamente.',
+          debug: pgDebug(error, { step: 'update_by_code', reuseCode }),
+        },
       }
     }
 
@@ -71,6 +149,13 @@ export async function ensureShortLinkForCard(supabase, cardId, targetUrl, existi
       return { shortUrl: buildShortRedirectUrl(data.code), code: data.code, error: null }
     }
   }
+
+  const existingRow = await ensureExistingRowForCard(supabase, cardId, target)
+  if (existingRow?.error || existingRow?.code) {
+    return existingRow
+  }
+
+  let lastInsertError = null
 
   for (let attempt = 0; attempt < INSERT_MAX_ATTEMPTS; attempt++) {
     const code = generateShortCode()
@@ -81,29 +166,38 @@ export async function ensureShortLinkForCard(supabase, cardId, targetUrl, existi
     })
 
     if (insertError) {
+      lastInsertError = insertError
       if (isUniqueViolation(insertError)) {
+        const recovered = await ensureExistingRowForCard(supabase, cardId, target)
+        if (recovered?.code) {
+          return recovered
+        }
+        if (recovered?.error) {
+          return recovered
+        }
         continue
       }
       return {
         shortUrl: null,
         code: null,
-        error: { message: 'Não foi possível gerar o link curto. Tente novamente.' },
+        error: {
+          message: 'Não foi possível gerar o link curto. Tente novamente.',
+          debug: pgDebug(insertError, { step: 'insert', attempt }),
+        },
       }
     }
 
-    const { data: cardRow, error: cardError } = await supabase
-      .from('cards')
-      .update({ short_code: code })
-      .eq('id', cardId)
-      .select('short_code')
-      .single()
+    const { data: cardRow, error: cardError } = await syncCardShortCode(supabase, cardId, code)
 
     if (cardError) {
       await supabase.from('short_links').delete().eq('code', code)
       return {
         shortUrl: null,
         code: null,
-        error: { message: 'Não foi possível associar o link curto ao card.' },
+        error: {
+          message: 'Não foi possível associar o link curto ao card.',
+          debug: pgDebug(cardError, { step: 'sync_short_code', code, attempt }),
+        },
       }
     }
 
@@ -115,7 +209,14 @@ export async function ensureShortLinkForCard(supabase, cardId, targetUrl, existi
   return {
     shortUrl: null,
     code: null,
-    error: { message: 'Não foi possível gerar um código único. Tente novamente.' },
+    error: {
+      message: 'Não foi possível gerar um código único. Tente novamente.',
+      debug: pgDebug(lastInsertError, {
+        step: 'insert_exhausted',
+        attempts: INSERT_MAX_ATTEMPTS,
+        note: 'Colisões repetidas em code ou card_id; verifique short_links para este card.',
+      }),
+    },
   }
 }
 
@@ -126,6 +227,7 @@ export function createNfcShortUrlPromise(supabase, cardId, targetUrl, existingSh
       if (error) {
         const err = new Error(error.message)
         err.name = 'ShortLinkError'
+        err.shortLinkDebug = error.debug ?? null
         throw err
       }
       return shortUrl

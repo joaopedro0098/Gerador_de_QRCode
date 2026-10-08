@@ -106,7 +106,10 @@ export async function saveNfcUrlOnly(
 
   const short = await ensureShortLinkForCard(supabase, cardId, url, storedShortCode)
   if (short.error) {
-    return { data: null, error: short.error }
+    return {
+      data: null,
+      error: { message: short.error.message, debug: short.error.debug ?? null },
+    }
   }
 
   const { patch, error } = activationPatch({
@@ -204,7 +207,10 @@ export async function activateNfc(
     nfcWriteSession?.abort()
     return {
       data: null,
-      error: { message: getNfcUserMessage(err) },
+      error: {
+        message: getNfcUserMessage(err),
+        debug: err?.shortLinkDebug ?? null,
+      },
       cancelled: false,
     }
   }
@@ -237,7 +243,11 @@ export async function activateNfc(
   if (!shortCode) {
     const short = await ensureShortLinkForCard(supabase, cardId, url, null)
     if (short.error) {
-      return { data: null, error: short.error, cancelled: false }
+      return {
+        data: null,
+        error: { message: short.error.message, debug: short.error.debug ?? null },
+        cancelled: false,
+      }
     }
     shortCode = short.code
   }
