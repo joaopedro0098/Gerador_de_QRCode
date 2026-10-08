@@ -5,62 +5,113 @@ export function isNfcSupported() {
 }
 
 function mapNfcError(err) {
+  const name = String(err?.name ?? '')
   const msg = String(err?.message ?? err ?? '').toLowerCase()
+
   if (err?.message === 'TIMEOUT') {
-    return 'Aproxime a tag mais perto.'
+    return 'Tempo esgotado. Encoste a tag no centro traseiro do celular e tente de novo.'
   }
   if (msg.includes('timeout') || msg.includes('timed out')) {
-    return 'Aproxime a tag mais perto.'
+    return 'Tempo esgotado. Encoste a tag no centro traseiro do celular e tente de novo.'
   }
-  if (msg.includes('not allowed') || msg.includes('permission')) {
-    return 'Permita o acesso à NFC nas configurações do Chrome.'
+  if (err?.message === 'READ_ERROR') {
+    return 'Tag incompatível ou sem NDEF. Use NTAG213/215/216 virgem ou outra tag gravável.'
   }
-  if (msg.includes('not supported') || msg.includes('ndefreader')) {
-    return 'Use Chrome no Android para gravar NFC.'
+  if (name === 'NotAllowedError' || msg.includes('not allowed') || msg.includes('permission')) {
+    return 'Permita NFC para este site no Chrome (ícone de cadeado → permissões).'
   }
-  return 'Não foi possível gravar a tag. Tente novamente.'
+  if (name === 'NotSupportedError' || msg.includes('not supported')) {
+    return 'NFC desligado ou indisponível. Ative NFC nas configurações do Android e use Chrome.'
+  }
+  if (name === 'NotReadableError' || msg.includes('not readable')) {
+    return 'Não deu para acessar a tag. Afaste e encoste de novo, sem capa grossa.'
+  }
+  if (name === 'InvalidStateError') {
+    return 'Toque Salvar de novo e encoste a tag quando pedir (mantenha o Chrome aberto).'
+  }
+  if (msg.includes('ndefreader')) {
+    return 'Use Chrome no Android, em HTTPS, com NFC ligado.'
+  }
+  return 'Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG.'
 }
 
 /**
- * Aguarda tag, lê serialNumber, grava URL NDEF.
- * @returns {Promise<string>} UID normalizado
+ * Inicia scan() no mesmo gesto do clique (obrigatório no Chrome).
+ * Depois chame waitForWrite() — pode await outras coisas antes, desde que scan já tenha começado.
  */
-export async function scanAndWriteNfcUrl(url, { timeoutMs = DEFAULT_SCAN_MS } = {}) {
+export function createNfcWriteSession(url, { timeoutMs = DEFAULT_SCAN_MS } = {}) {
   if (!isNfcSupported()) {
     throw new Error('UNSUPPORTED')
   }
 
   const ndef = new NDEFReader()
+  const message = {
+    records: [{ recordType: 'url', data: url }],
+  }
 
-  return new Promise((resolve, reject) => {
+  let aborted = false
+  let scanError = null
+
+  const scanPromise = ndef.scan().catch((err) => {
+    scanError = err
+    throw err
+  })
+
+  const writePromise = new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => {
       reject(new Error('TIMEOUT'))
     }, timeoutMs)
 
-    ndef.onreadingerror = () => {
+    const fail = (err) => {
       window.clearTimeout(timer)
-      reject(new Error('READ_ERROR'))
+      reject(err)
     }
 
-    ndef.onreading = async (event) => {
-      try {
-        const uid = normalizeUid(event.serialNumber)
-        await ndef.write({
-          records: [{ recordType: 'url', data: url }],
-        })
-        window.clearTimeout(timer)
-        resolve(uid)
-      } catch (writeErr) {
-        window.clearTimeout(timer)
-        reject(writeErr)
-      }
+    const succeed = (uid) => {
+      window.clearTimeout(timer)
+      resolve(uid)
     }
 
-    ndef.scan().catch((scanErr) => {
-      window.clearTimeout(timer)
-      reject(scanErr)
-    })
+    ndef.addEventListener(
+      'readingerror',
+      () => {
+        if (aborted) return
+        fail(new Error('READ_ERROR'))
+      },
+      { once: true },
+    )
+
+    ndef.addEventListener(
+      'reading',
+      async (event) => {
+        if (aborted) return
+        try {
+          await ndef.write(message, { overwrite: true })
+          succeed(normalizeUid(event.serialNumber))
+        } catch (writeErr) {
+          fail(writeErr)
+        }
+      },
+      { once: true },
+    )
   })
+
+  return {
+    abort() {
+      aborted = true
+    },
+    async waitForWrite() {
+      await scanPromise
+      if (scanError) throw scanError
+      return writePromise
+    },
+  }
+}
+
+/** @deprecated Prefer createNfcWriteSession from the click handler. */
+export async function scanAndWriteNfcUrl(url, options) {
+  const session = createNfcWriteSession(url, options)
+  return session.waitForWrite()
 }
 
 export function normalizeUid(serialNumber) {

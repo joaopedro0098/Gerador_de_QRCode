@@ -1,4 +1,4 @@
-import { getNfcUserMessage, isNfcSupported, normalizeUid, scanAndWriteNfcUrl } from './nfc.js'
+import { getNfcUserMessage, isNfcSupported, normalizeUid } from './nfc.js'
 import { isCardActivated } from './cardStatus.js'
 import { isValidHttpsUrl } from './validate.js'
 
@@ -124,7 +124,7 @@ export async function activateNfc(
   supabase,
   cardId,
   nfcUrl,
-  { locationBairroId, wasActivated, existingBairroId } = {},
+  { locationBairroId, wasActivated, existingBairroId, nfcWriteSession = null } = {},
 ) {
   const url = nfcUrl.trim()
   if (!isValidHttpsUrl(url)) {
@@ -141,7 +141,17 @@ export async function activateNfc(
 
   let uid
   try {
-    uid = await scanAndWriteNfcUrl(url)
+    if (!nfcWriteSession) {
+      return {
+        data: null,
+        error: {
+          message:
+            'Toque Salvar no NFC de novo e encoste a tag quando aparecer «Aproxime a tag…».',
+        },
+        cancelled: false,
+      }
+    }
+    uid = await nfcWriteSession.waitForWrite()
   } catch (err) {
     return { data: null, error: { message: getNfcUserMessage(err) }, cancelled: false }
   }
@@ -189,7 +199,7 @@ export async function activateNfc(
 export async function activateComplete(
   supabase,
   cardId,
-  { destinationUrl, nfcUrl, notes, locationBairroId, wasActivated, existingBairroId },
+  { destinationUrl, nfcUrl, notes, locationBairroId, wasActivated, existingBairroId, nfcWriteSession = null },
 ) {
   const qrTrimmed = destinationUrl.trim()
   const nfcTrimmed = nfcUrl.trim()
@@ -243,6 +253,7 @@ export async function activateComplete(
     locationBairroId,
     wasActivated,
     existingBairroId: card?.location_bairro_id ?? existingBairroId,
+    nfcWriteSession,
   })
   if (nfcResult.cancelled) {
     return { data: card ?? nfcResult.data, error: null, nfcCancelled: true }

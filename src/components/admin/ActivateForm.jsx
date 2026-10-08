@@ -12,7 +12,8 @@ import ChangeBairroConfirmModal from './ChangeBairroConfirmModal.jsx'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { isActiveCardBairroChange } from '../../utils/cardStatus.js'
 import { blockEmptyBackspaceNav } from '../../utils/formInput.js'
-import { isNfcSupported } from '../../utils/nfc.js'
+import { createNfcWriteSession, isNfcSupported } from '../../utils/nfc.js'
+import { isValidHttpsUrl } from '../../utils/validate.js'
 
 export default function ActivateForm({
   card = null,
@@ -265,11 +266,33 @@ export default function ActivateForm({
       return
     }
 
+    const url = nfcUrl.trim()
+    if (!url) {
+      setError('Informe o link NFC.')
+      return
+    }
+    if (!isValidHttpsUrl(url)) {
+      setError('O link NFC deve ser uma URL HTTPS válida.')
+      return
+    }
+
     if (!isNfcSupported()) {
       setNfcHint('Use Chrome no Android para gravar NFC.')
       return
     }
-    if (!(await ensureBairroChangeBeforeSave())) return
+
+    let nfcWriteSession = null
+    try {
+      nfcWriteSession = createNfcWriteSession(url)
+    } catch {
+      setNfcHint('Use Chrome no Android para gravar NFC.')
+      return
+    }
+
+    if (!(await ensureBairroChangeBeforeSave())) {
+      nfcWriteSession.abort()
+      return
+    }
 
     setBusy('nfc')
     const wasActivated = isCardActivated(existing)
@@ -277,6 +300,7 @@ export default function ActivateForm({
       locationBairroId,
       wasActivated,
       existingBairroId: existing.location_bairro_id,
+      nfcWriteSession,
     })
     setBusy(null)
 
@@ -310,7 +334,21 @@ export default function ActivateForm({
     }
 
     const wasActivated = isCardActivated(existing)
-    if (!(await ensureBairroChangeBeforeSave())) return
+    const nfcTrimmed = nfcUrl.trim()
+    let nfcWriteSession = null
+    if (nfcTrimmed && isValidHttpsUrl(nfcTrimmed) && isNfcSupported()) {
+      try {
+        nfcWriteSession = createNfcWriteSession(nfcTrimmed)
+      } catch {
+        setNfcHint('Use Chrome no Android para gravar NFC.')
+        return
+      }
+    }
+
+    if (!(await ensureBairroChangeBeforeSave())) {
+      nfcWriteSession?.abort()
+      return
+    }
 
     setBusy('full')
 
@@ -321,6 +359,7 @@ export default function ActivateForm({
       locationBairroId,
       wasActivated,
       existingBairroId: existing.location_bairro_id,
+      nfcWriteSession,
     })
 
     setBusy(null)

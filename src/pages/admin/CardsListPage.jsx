@@ -4,6 +4,7 @@ import ActivatedLocationsExplorer from '../../components/admin/ActivatedLocation
 import BatchGenerateModal from '../../components/admin/BatchGenerateModal.jsx'
 import CardAnnotationModal from '../../components/admin/CardAnnotationModal.jsx'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
+import DeactivateCardConfirmModal from '../../components/admin/DeactivateCardConfirmModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
 import { CARD_FIELDS } from '../../utils/cardActivation.js'
@@ -30,7 +31,7 @@ export default function CardsListPage() {
   const [cards, setCards] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('virgin')
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -40,6 +41,8 @@ export default function CardsListPage() {
   const [gerarOpen, setGerarOpen] = useState(false)
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0)
   const [annotationCard, setAnnotationCard] = useState(null)
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [deactivateBusy, setDeactivateBusy] = useState(false)
 
   const codeFromUrl = searchParams.get('code')
   const showActivatedExplorer = filter === 'activated' && !search.trim()
@@ -97,10 +100,10 @@ export default function CardsListPage() {
       .order('loja_num', { ascending: true })
       .range(from, to)
 
-    if (filter === 'virgin') {
-      query = applyVirginCardsFilter(query)
-    } else if (filter === 'activated') {
+    if (filter === 'activated') {
       query = applyActivatedCardsFilter(query)
+    } else {
+      query = applyVirginCardsFilter(query)
     }
 
     if (search) {
@@ -197,13 +200,19 @@ export default function CardsListPage() {
     }
   }
 
-  async function handleDeactivateCard(card) {
+  function requestDeactivateCard(card) {
     if (!isCardActivated(card)) return
-    const ok = window.confirm(
-      `Desativar ${card.code}? QR, NFC, estabelecimento, bairro e anotações serão limpos e o card voltará para Virgens.`,
-    )
-    if (!ok) return
+    setDeactivateTarget(card)
+  }
 
+  async function confirmDeactivateCard() {
+    const card = deactivateTarget
+    if (!card || !isCardActivated(card)) {
+      setDeactivateTarget(null)
+      return
+    }
+
+    setDeactivateBusy(true)
     const { data, error: updateError } = await supabase
       .from('cards')
       .update({
@@ -219,12 +228,14 @@ export default function CardsListPage() {
       .eq('id', card.id)
       .select(CARD_FIELDS)
       .single()
+    setDeactivateBusy(false)
 
     if (updateError) {
       setError(updateError.message)
       return
     }
 
+    setDeactivateTarget(null)
     if (selectedCard?.id === card.id) {
       closeCardModal()
     }
@@ -250,12 +261,11 @@ export default function CardsListPage() {
 
   function toggleStatusFilter(value) {
     setFilter((prev) => {
-      const next = prev === value ? 'all' : value
-      if (next === 'virgin' || next === 'all') {
+      if (prev !== value && value === 'virgin') {
         setSearchInput('')
         setSearch('')
       }
-      return next
+      return value
     })
     setPage(1)
   }
@@ -315,7 +325,7 @@ export default function CardsListPage() {
           refreshKey={explorerRefreshKey}
           onSelectCard={(card) => openCardModal(card, false)}
           onActivateCard={(card) => openCardModal(card, true)}
-          onDeactivateCard={handleDeactivateCard}
+          onDeactivateCard={requestDeactivateCard}
           onPauseCard={handlePauseCard}
           onAnnotationCard={setAnnotationCard}
         />
@@ -328,7 +338,7 @@ export default function CardsListPage() {
             showLocationColumn={showActivatedSearch}
             onSelectCard={(card) => openCardModal(card, false)}
             onActivateCard={(card) => openCardModal(card, true)}
-            onDeactivateCard={handleDeactivateCard}
+            onDeactivateCard={requestDeactivateCard}
             onPauseCard={handlePauseCard}
             onAnnotationCard={setAnnotationCard}
           />
@@ -358,6 +368,14 @@ export default function CardsListPage() {
       />
 
       <BatchGenerateModal open={gerarOpen} onClose={() => setGerarOpen(false)} />
+
+      <DeactivateCardConfirmModal
+        open={Boolean(deactivateTarget)}
+        code={deactivateTarget?.code}
+        busy={deactivateBusy}
+        onCancel={() => !deactivateBusy && setDeactivateTarget(null)}
+        onConfirm={confirmDeactivateCard}
+      />
     </div>
   )
 }
