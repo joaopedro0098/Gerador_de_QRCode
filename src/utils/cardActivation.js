@@ -119,12 +119,29 @@ export async function saveNfcUrlOnly(
     .single()
 }
 
+/** Tag física só precisa ser gravada se o link mudou ou ainda não há UID no card. */
+export function isNfcTagWriteRequired(storedCard, nfcUrl) {
+  const url = nfcUrl.trim()
+  if (!url || !isValidHttpsUrl(url)) return false
+  if (!isNfcSupported()) return false
+  const storedUrl = storedCard?.nfc_url?.trim() ?? ''
+  const storedUid = storedCard?.nfc_uid?.trim() ?? ''
+  return !(storedUrl === url && storedUid)
+}
+
 /** Grava tag NFC e persiste nfc_url + nfc_uid. Ativa se ainda virgem. */
 export async function activateNfc(
   supabase,
   cardId,
   nfcUrl,
-  { locationBairroId, wasActivated, existingBairroId, nfcWriteSession = null } = {},
+  {
+    locationBairroId,
+    wasActivated,
+    existingBairroId,
+    nfcWriteSession = null,
+    storedNfcUrl = null,
+    storedNfcUid = null,
+  } = {},
 ) {
   const url = nfcUrl.trim()
   if (!isValidHttpsUrl(url)) {
@@ -137,6 +154,16 @@ export async function activateNfc(
       wasActivated,
       existingBairroId,
     }).then((result) => ({ ...result, cancelled: false, savedUrlOnly: true }))
+  }
+
+  const storedCard = { nfc_url: storedNfcUrl, nfc_uid: storedNfcUid }
+  if (!isNfcTagWriteRequired(storedCard, url)) {
+    nfcWriteSession?.abort()
+    return saveNfcUrlOnly(supabase, cardId, url, {
+      locationBairroId,
+      wasActivated,
+      existingBairroId,
+    }).then((result) => ({ ...result, cancelled: false, hardwareSkipped: true }))
   }
 
   let uid
@@ -207,12 +234,23 @@ export async function activateNfc(
 export async function activateComplete(
   supabase,
   cardId,
-  { destinationUrl, nfcUrl, notes, locationBairroId, wasActivated, existingBairroId, nfcWriteSession = null },
+  {
+    destinationUrl,
+    nfcUrl,
+    notes,
+    locationBairroId,
+    wasActivated,
+    existingBairroId,
+    nfcWriteSession = null,
+    storedNfcUrl = null,
+    storedNfcUid = null,
+  },
 ) {
   const qrTrimmed = destinationUrl.trim()
   const nfcTrimmed = nfcUrl.trim()
+  let activated = wasActivated
 
-  if (!wasActivated && !qrTrimmed && !nfcTrimmed) {
+  if (!activated && !qrTrimmed && !nfcTrimmed) {
     return {
       data: null,
       error: { message: 'Informe o link do QR e/ou o link NFC para ativar.' },
@@ -225,14 +263,14 @@ export async function activateComplete(
   if (qrTrimmed) {
     const qrResult = await activateQr(supabase, cardId, qrTrimmed, {
       locationBairroId,
-      wasActivated,
+      wasActivated: activated,
       existingBairroId,
     })
     if (qrResult.error) {
       return { data: null, error: qrResult.error, step: 'qr' }
     }
     card = qrResult.data
-    wasActivated = isCardActivated(card)
+    activated = isCardActivated(card)
   }
 
   if (notes !== undefined) {
@@ -259,9 +297,11 @@ export async function activateComplete(
 
   const nfcResult = await activateNfc(supabase, cardId, nfcTrimmed, {
     locationBairroId,
-    wasActivated,
+    wasActivated: activated,
     existingBairroId: card?.location_bairro_id ?? existingBairroId,
     nfcWriteSession,
+    storedNfcUrl: card?.nfc_url ?? storedNfcUrl,
+    storedNfcUid: card?.nfc_uid ?? storedNfcUid,
   })
   if (nfcResult.cancelled) {
     return { data: card ?? nfcResult.data, error: null, nfcCancelled: true }

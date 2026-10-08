@@ -6,6 +6,7 @@ import {
   activateNfc,
   activateQr,
   isCardActivated,
+  isNfcTagWriteRequired,
 } from '../../utils/cardActivation.js'
 import BairroActivateField from './BairroActivateField.jsx'
 import ChangeBairroConfirmModal from './ChangeBairroConfirmModal.jsx'
@@ -38,6 +39,7 @@ export default function ActivateForm({
   const [locationBairroId, setLocationBairroId] = useState(null)
   const [nfcHint, setNfcHint] = useState(null)
   const [nfcDebugPanel, setNfcDebugPanel] = useState(null)
+  const [successTone, setSuccessTone] = useState(null)
   const [bairroConfirmOpen, setBairroConfirmOpen] = useState(false)
   const [bairroConfirmBusy, setBairroConfirmBusy] = useState(false)
   const bairroConfirmResolverRef = useRef(null)
@@ -60,6 +62,7 @@ export default function ActivateForm({
   useEffect(() => {
     setMessage(null)
     setError(null)
+    setSuccessTone(null)
     setNfcHint(null)
 
     if (standalone) {
@@ -130,9 +133,11 @@ export default function ActivateForm({
     linkInputRef.current?.focus({ preventScroll: true })
   }, [focusLinkOnMount, loadingCard, existing?.id])
 
-  function finishSuccess(data, text) {
+  function finishSuccess(data, text, { tone = null } = {}) {
     setExisting(data)
+    setError(null)
     setMessage(text)
+    setSuccessTone(tone)
     onSaved?.(data)
   }
 
@@ -307,6 +312,7 @@ export default function ActivateForm({
   async function handleGerarNfc() {
     setError(null)
     setMessage(null)
+    setSuccessTone(null)
     setNfcHint(null)
     setNfcDebugPanel(null)
     if (!existing) {
@@ -367,6 +373,7 @@ export default function ActivateForm({
     finishSuccess(
       result.data,
       result.savedUrlOnly ? 'Link NFC salvo.' : 'NFC gravado com sucesso.',
+      { tone: 'nfc' },
     )
   }
 
@@ -374,6 +381,7 @@ export default function ActivateForm({
     e.preventDefault()
     setError(null)
     setMessage(null)
+    setSuccessTone(null)
     setNfcHint(null)
 
     if (!existing) {
@@ -386,9 +394,15 @@ export default function ActivateForm({
     }
 
     const wasActivated = isCardActivated(existing)
+    const qrTrimmed = destinationUrl.trim()
     const nfcTrimmed = nfcUrl.trim()
     let nfcWriteSession = null
-    if (nfcTrimmed && isValidHttpsUrl(nfcTrimmed) && isNfcSupported()) {
+    if (
+      nfcTrimmed &&
+      isValidHttpsUrl(nfcTrimmed) &&
+      isNfcSupported() &&
+      isNfcTagWriteRequired(existing, nfcTrimmed)
+    ) {
       try {
         nfcWriteSession = createNfcWriteSession(nfcTrimmed)
       } catch {
@@ -412,6 +426,8 @@ export default function ActivateForm({
       wasActivated,
       existingBairroId: existing.location_bairro_id,
       nfcWriteSession,
+      storedNfcUrl: existing.nfc_url,
+      storedNfcUid: existing.nfc_uid,
     })
 
     setBusy(null)
@@ -440,9 +456,17 @@ export default function ActivateForm({
       setNfcHint('Link NFC salvo. Use Chrome no Android para gravar a tag física.')
     }
 
+    const nfcAlreadyOnTag =
+      nfcTrimmed && !isNfcTagWriteRequired(existing, nfcTrimmed) && isNfcSupported()
+    const showNfcSuccessTone = nfcAlreadyOnTag || Boolean(result.data?.nfc_uid)
     finishSuccess(
       result.data,
-      wasActivated ? 'Card atualizado com sucesso.' : 'Card ativado com sucesso.',
+      nfcAlreadyOnTag
+        ? 'NFC gravado com sucesso.'
+        : wasActivated
+          ? 'Card atualizado com sucesso.'
+          : 'Card ativado com sucesso.',
+      showNfcSuccessTone ? { tone: 'nfc' } : {},
     )
   }
 
@@ -584,7 +608,9 @@ export default function ActivateForm({
 
       {nfcHint && <p className="form-hint">{nfcHint}</p>}
       {error && <p className="form-hint error">{error}</p>}
-      {message && <p className="form-hint success">{message}</p>}
+      {message && (
+        <p className={`form-hint success${successTone === 'nfc' ? ' success-nfc' : ''}`}>{message}</p>
+      )}
 
       <button type="submit" className="btn primary" disabled={formLocked}>
         {busy === 'full' ? 'Processando…' : 'Ativar'}

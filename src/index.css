@@ -695,6 +695,14 @@ input:focus {
   color: var(--success);
 }
 
+.form-hint.success-nfc {
+  color: #065f46;
+  background: #d1fae5;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  margin: 0.35rem 0 0;
+}
+
 /* Buttons */
 .btn {
   font: inherit;
