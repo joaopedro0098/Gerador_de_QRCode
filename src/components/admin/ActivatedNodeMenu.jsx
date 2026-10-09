@@ -2,9 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 export default function ActivatedNodeMenu({
   label = 'Opções',
-  canAdd = false,
   canDelete = false,
-  onAdd,
   onEdit,
   onDelete,
 }) {
@@ -14,18 +12,25 @@ export default function ActivatedNodeMenu({
 
   useEffect(() => {
     if (!open) return
+
+    function onKey(e) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+
     function onDocPointer(e) {
       if (wrapRef.current?.contains(e.target)) return
       setOpen(false)
     }
-    function onKey(e) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('pointerdown', onDocPointer)
+
     window.addEventListener('keydown', onKey)
+    const attachTimer = window.setTimeout(() => {
+      document.addEventListener('pointerdown', onDocPointer)
+    }, 0)
+
     return () => {
-      document.removeEventListener('pointerdown', onDocPointer)
+      window.clearTimeout(attachTimer)
       window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDocPointer)
     }
   }, [open])
 
@@ -38,7 +43,9 @@ export default function ActivatedNodeMenu({
     <div
       className="activated-layer-menu-wrap activated-node-menu-wrap"
       ref={wrapRef}
+      data-open={open ? 'true' : undefined}
       onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <button
         type="button"
@@ -56,11 +63,6 @@ export default function ActivatedNodeMenu({
       </button>
       {open && (
         <div className="activated-layer-menu" id={menuId} role="menu">
-          {canAdd && (
-            <button type="button" role="menuitem" className="activated-layer-menu-item" onClick={() => run(onAdd)}>
-              Adicionar
-            </button>
-          )}
           <button type="button" role="menuitem" className="activated-layer-menu-item" onClick={() => run(onEdit)}>
             Editar
           </button>

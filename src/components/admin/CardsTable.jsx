@@ -21,25 +21,30 @@ export default function CardsTable({
   showLocationColumn = false,
   embedAnnotationIcon = false,
   hideRowActions = false,
+  virginLayout = false,
 }) {
   if (!cards.length) {
     return <p className="muted">Nenhum ID encontrado.</p>
   }
 
   const showActionsColumn = !hideRowActions
+  const showAnnotationColumn = !embedAnnotationIcon && !virginLayout
+  const showStatusColumn = !virginLayout
+  const showCreatedAtColumn = !virginLayout
 
   return (
     <div className="table-wrap">
       <table className="data-table">
         <thead>
           <tr>
-            {!embedAnnotationIcon && <th aria-label="Anotações" />}
+            {showAnnotationColumn && <th aria-label="Anotações" />}
             <th>ID</th>
-            <th>Status</th>
+            {showStatusColumn && <th>Status</th>}
             <th>Estabelecimento</th>
             {showLocationColumn && <th>Local</th>}
-            <th>Criado em</th>
+            {showCreatedAtColumn && <th>Criado em</th>}
             <th>Ativado em</th>
+            {embedAnnotationIcon && <th className="cell-trailing-icon" aria-label="Anotações" />}
             {showActionsColumn && <th aria-hidden />}
           </tr>
         </thead>
@@ -48,7 +53,7 @@ export default function CardsTable({
             const activated = isCardActivated(card)
             return (
               <tr key={card.id} className={card.paused ? 'row-paused' : undefined}>
-                {!embedAnnotationIcon && (
+                {showAnnotationColumn && (
                   <td className="cell-icon">
                     {activated ? (
                       <AnnotationLeafButton
@@ -64,28 +69,26 @@ export default function CardsTable({
                     {card.code}
                   </button>
                 </td>
-                <td>
-                  <span className={`badge ${activated ? 'badge-ok' : 'badge-muted'}`}>
-                    {activated ? (card.paused ? 'Pausado' : 'Ativado') : 'Virgem'}
-                  </span>
-                </td>
-                <td
-                  className={`cell-notes${embedAnnotationIcon && activated ? ' cell-notes-with-annotation' : ''}`}
-                >
-                  {embedAnnotationIcon && activated ? (
-                    <span className="cell-notes-annotation-row">
-                      <span className="cell-notes-text">{card.notes || '—'}</span>
-                      <AnnotationLeafButton card={card} onClick={onAnnotationCard} />
+                {showStatusColumn && (
+                  <td>
+                    <span className={`badge ${activated ? 'badge-ok' : 'badge-muted'}`}>
+                      {activated ? (card.paused ? 'Pausado' : 'Ativado') : 'Virgem'}
                     </span>
-                  ) : (
-                    card.notes || '—'
-                  )}
-                </td>
+                  </td>
+                )}
+                <td className="cell-notes">{card.notes || '—'}</td>
                 {showLocationColumn && (
                   <td className="cell-notes">{card.location_path || '—'}</td>
                 )}
-                <td>{formatDateOnly(card.created_at)}</td>
+                {showCreatedAtColumn && <td>{formatDateOnly(card.created_at)}</td>}
                 <td>{formatDateTime(card.activated_at)}</td>
+                {embedAnnotationIcon && (
+                  <td className="cell-trailing-icon">
+                    {activated ? (
+                      <AnnotationLeafButton card={card} onClick={onAnnotationCard} />
+                    ) : null}
+                  </td>
+                )}
                 {showActionsColumn && (
                   <td className="cell-actions">
                     <div className="cell-actions-group">

@@ -6,6 +6,10 @@ import { isValidHttpsUrl } from './validate.js'
 export const CARD_FIELDS =
   'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, short_code, created_at, location_bairro_id, paused, annotation'
 
+/** Lista Virgens — sem created_at (não exibido na UI). */
+export const CARD_VIRGIN_LIST_FIELDS =
+  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, short_code, location_bairro_id, paused, annotation'
+
 export { isCardActivated }
 
 export async function fetchCardById(supabase, id) {
@@ -58,6 +62,89 @@ function activationPatch({ wasActivated, bairroId, existingBairroId, locationBai
   return { patch }
 }
 
+/** Virgens: bairro + estabelecimento + (QR ou NFC) — grava e define activated_at. */
+export async function activateVirginCard(
+  supabase,
+  cardId,
+  {
+    destinationUrl = '',
+    nfcUrl = '',
+    storedNfcUrl = '',
+    notes,
+    locationBairroId,
+    wasActivated,
+    existingBairroId,
+  },
+) {
+  const qr = destinationUrl.trim()
+  const nfcFromForm = nfcUrl.trim()
+  const nfcStored = storedNfcUrl.trim()
+  const effectiveNfc = nfcFromForm || nfcStored
+
+  if (!notes?.trim()) {
+    return { data: null, error: { message: 'Informe o nome do estabelecimento.' } }
+  }
+  if (!qr && !effectiveNfc) {
+    return { data: null, error: { message: 'Informe o link do QR ou grave o NFC antes de ativar.' } }
+  }
+  if (qr && !isValidHttpsUrl(qr)) {
+    return { data: null, error: { message: 'O link do QR deve ser uma URL HTTPS válida.' } }
+  }
+  if (nfcFromForm && !isValidHttpsUrl(nfcFromForm)) {
+    return { data: null, error: { message: 'O link NFC deve ser uma URL HTTPS válida.' } }
+  }
+
+  const { patch, error } = activationPatch({
+    wasActivated,
+    bairroId: existingBairroId,
+    existingBairroId,
+    locationBairroId,
+  })
+  if (error) return { data: null, error }
+
+  const update = {
+    notes: notes.trim(),
+    ...patch,
+  }
+  if (qr) update.destination_url = qr
+  if (nfcFromForm) update.nfc_url = nfcFromForm
+
+  return supabase.from('cards').update(update).eq('id', cardId).select(CARD_FIELDS).single()
+}
+
+/** Card já ativado: estabelecimento + QR (NFC existente ou no form conta como link). */
+export async function saveActivatedCardFields(
+  supabase,
+  cardId,
+  { notes, destinationUrl = '', nfcUrl = '', storedDestinationUrl = '', storedNfcUrl = '' },
+) {
+  const est = notes?.trim()
+  const qr = destinationUrl.trim()
+  const nfcForm = nfcUrl.trim()
+  const storedQr = storedDestinationUrl?.trim() ?? ''
+  const storedNfc = storedNfcUrl?.trim() ?? ''
+
+  if (!est) {
+    return { data: null, error: { message: 'Informe o nome do estabelecimento.' } }
+  }
+
+  const hasLink = Boolean(qr || storedQr || nfcForm || storedNfc)
+  if (!hasLink) {
+    return { data: null, error: { message: 'Informe o link do QR ou grave o NFC.' } }
+  }
+
+  if (qr && !isValidHttpsUrl(qr)) {
+    return { data: null, error: { message: 'O link do QR deve ser uma URL HTTPS válida.' } }
+  }
+
+  const update = { notes: est }
+  if (qr) {
+    update.destination_url = qr
+  }
+
+  return supabase.from('cards').update(update).eq('id', cardId).select(CARD_FIELDS).single()
+}
+
 /** Salva link do QR (ativa se ainda virgem). */
 export async function activateQr(
   supabase,
@@ -89,12 +176,49 @@ export async function activateQr(
     .single()
 }
 
-/** Salva link NFC no banco (sem gravar tag). Ativa se ainda virgem. */
+function nfcDraftRowPatch({
+  locationBairroId,
+  existingBairroId,
+  notes,
+  wasActivated,
+  withoutActivation,
+}) {
+  if (withoutActivation && !wasActivated) {
+    const bairro = locationBairroId ?? existingBairroId ?? null
+    if (!bairro) {
+      return { error: { message: 'Selecione ou crie um bairro antes de gravar.' } }
+    }
+    return {
+      patch: {
+        location_bairro_id: bairro,
+        ...(notes !== undefined ? { notes: notes?.trim() || null } : {}),
+      },
+    }
+  }
+
+  const { patch, error } = activationPatch({
+    wasActivated,
+    bairroId: existingBairroId,
+    existingBairroId,
+    locationBairroId,
+  })
+  if (error) return { error }
+  return { patch }
+}
+
+/** Salva link NFC no banco (sem gravar tag). Ativa se ainda virgem (salvo withoutActivation). */
 export async function saveNfcUrlOnly(
   supabase,
   cardId,
   nfcUrl,
-  { locationBairroId, wasActivated, existingBairroId, storedShortCode = null } = {},
+  {
+    locationBairroId,
+    wasActivated,
+    existingBairroId,
+    storedShortCode = null,
+    withoutActivation = false,
+    notes,
+  } = {},
 ) {
   const url = nfcUrl.trim()
   if (!url) {
@@ -112,11 +236,12 @@ export async function saveNfcUrlOnly(
     }
   }
 
-  const { patch, error } = activationPatch({
-    wasActivated,
-    bairroId: existingBairroId,
-    existingBairroId,
+  const { patch, error } = nfcDraftRowPatch({
     locationBairroId,
+    existingBairroId,
+    notes,
+    wasActivated,
+    withoutActivation,
   })
   if (error) return { data: null, error }
 
@@ -156,6 +281,8 @@ export async function activateNfc(
     storedNfcUid = null,
     storedShortCode = null,
     forceTagWrite = false,
+    withoutActivation = false,
+    notes,
   } = {},
 ) {
   const url = nfcUrl.trim()
@@ -169,6 +296,8 @@ export async function activateNfc(
       wasActivated,
       existingBairroId,
       storedShortCode,
+      withoutActivation,
+      notes,
     }).then((result) => ({ ...result, cancelled: false, savedUrlOnly: true }))
   }
 
@@ -184,6 +313,8 @@ export async function activateNfc(
       wasActivated,
       existingBairroId,
       storedShortCode,
+      withoutActivation,
+      notes,
     }).then((result) => ({ ...result, cancelled: false, hardwareSkipped: true }))
   }
 
@@ -196,7 +327,7 @@ export async function activateNfc(
         data: null,
         error: {
           message:
-            'Toque Salvar no NFC de novo e encoste a tag quando aparecer «Aproxime a tag…».',
+            'Toque Gravar no NFC de novo e encoste a tag quando aparecer «Aproxime a tag…».',
         },
         cancelled: false,
       }
@@ -242,11 +373,12 @@ export async function activateNfc(
     }
   }
 
-  const { patch, error } = activationPatch({
-    wasActivated,
-    bairroId: existingBairroId,
-    existingBairroId,
+  const { patch, error } = nfcDraftRowPatch({
     locationBairroId,
+    existingBairroId,
+    notes,
+    wasActivated,
+    withoutActivation,
   })
   if (error) return { data: null, error, cancelled: false }
 

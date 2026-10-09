@@ -28,7 +28,6 @@ export default function BairroActivateField({
     getLocationPathLabels(bairroId).then(({ data }) => {
       if (!cancelled) {
         setPathLabel(data ?? '')
-        setQuery('')
       }
     })
     return () => {
@@ -79,26 +78,44 @@ export default function BairroActivateField({
     setResults([])
   }
 
+  function clearSelectedBairro() {
+    if (disabled) return
+    onBairroIdChange(null)
+    setPathLabel('')
+    setQuery('')
+    setOpenList(false)
+    setResults([])
+  }
+
   const showEmpty =
     openList && query.trim() && !loading && results.length === 0 && !disabled
 
   return (
     <div className="bairro-field" ref={wrapRef}>
       <label>
-        Bairro
+        Escolha um Bairro
         {bairroId && pathLabel ? (
-          <p className="bairro-selected-path muted">{pathLabel}</p>
+          <div className="bairro-selected-path-row">
+            <p className="bairro-selected-path muted">{pathLabel}</p>
+            <button
+              type="button"
+              className="bairro-clear-btn"
+              aria-label="Remover bairro selecionado"
+              title="Remover bairro"
+              disabled={disabled}
+              onClick={clearSelectedBairro}
+            >
+              ×
+            </button>
+          </div>
         ) : null}
         <input
           type="text"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            if (bairroId) onBairroIdChange(null)
-          }}
+          onChange={(e) => setQuery(e.target.value)}
           onKeyDown={blockEmptyBackspaceNav}
           onFocus={() => query.trim() && setOpenList(true)}
-          placeholder="insira o bairro"
+          placeholder="nome do bairro"
           disabled={disabled}
           autoComplete="off"
         />
@@ -121,7 +138,7 @@ export default function BairroActivateField({
         <div className="bairro-suggest-empty">
           <p className="form-hint muted">Nenhum bairro criado com este nome.</p>
           <button type="button" className="btn secondary small" onClick={() => setCreateOpen(true)}>
-            Criar?
+            Criar
           </button>
         </div>
       )}
@@ -139,6 +156,8 @@ export default function BairroActivateField({
           onBairroIdChange(node.id)
           setPathLabel(data ?? node.name)
           setQuery('')
+          setOpenList(false)
+          setResults([])
         }}
       />
     </div>

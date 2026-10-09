@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import ActivatedLocationsExplorer from '../../components/admin/ActivatedLocationsExplorer.jsx'
+import CardsListStatusToolbar from '../../components/admin/CardsListStatusToolbar.jsx'
 import BatchGenerateModal from '../../components/admin/BatchGenerateModal.jsx'
 import CardAnnotationModal from '../../components/admin/CardAnnotationModal.jsx'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
 import DeactivateCardConfirmModal from '../../components/admin/DeactivateCardConfirmModal.jsx'
 import CardsTable from '../../components/admin/CardsTable.jsx'
 import Pagination from '../../components/ui/Pagination.jsx'
-import { CARD_FIELDS } from '../../utils/cardActivation.js'
+import { CARD_FIELDS, CARD_VIRGIN_LIST_FIELDS } from '../../utils/cardActivation.js'
 import {
   applyActivatedCardsFilter,
   applyVirginCardsFilter,
@@ -18,11 +19,6 @@ import { supabase } from '../../lib/supabase.js'
 import { searchActivatedCards } from '../../utils/locationApi.js'
 import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { escapeIlikePrefix, normalizeEstablishmentSearch } from '../../utils/search.js'
-
-const STATUS_FILTERS = [
-  { value: 'virgin', label: 'Virgens' },
-  { value: 'activated', label: 'Ativados' },
-]
 
 const SEARCH_DEBOUNCE_MS = 280
 
@@ -43,6 +39,7 @@ export default function CardsListPage() {
   const [annotationCard, setAnnotationCard] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
   const [deactivateBusy, setDeactivateBusy] = useState(false)
+  const activatedExplorerRef = useRef(null)
 
   const codeFromUrl = searchParams.get('code')
   const showActivatedExplorer = filter === 'activated' && !search.trim()
@@ -94,9 +91,11 @@ export default function CardsListPage() {
     const from = (page - 1) * PAGE_SIZE
     const to = from + PAGE_SIZE - 1
 
+    const listFields = filter === 'virgin' ? CARD_VIRGIN_LIST_FIELDS : CARD_FIELDS
+
     let query = supabase
       .from('cards')
-      .select(CARD_FIELDS, { count: 'exact' })
+      .select(listFields, { count: 'exact' })
       .order('loja_num', { ascending: true })
       .range(from, to)
 
@@ -172,7 +171,7 @@ export default function CardsListPage() {
     setExplorerRefreshKey((k) => k + 1)
   }
 
-  function handleCardSaved(updated, { reloadList = false } = {}) {
+  function handleCardSaved(updated, { reloadList = false, navigateToActivated = false } = {}) {
     const prevActivated = selectedCard ? isCardActivated(selectedCard) : false
     const nextActivated = isCardActivated(updated)
 
@@ -192,11 +191,26 @@ export default function CardsListPage() {
       updated.location_bairro_id &&
       selectedCard.location_bairro_id !== updated.location_bairro_id
 
-    if (prevActivated !== nextActivated || bairroMoved) {
+    const activatedMetadataChanged =
+      prevActivated &&
+      nextActivated &&
+      selectedCard &&
+      (selectedCard.notes !== updated.notes ||
+        selectedCard.destination_url !== updated.destination_url)
+
+    if (prevActivated !== nextActivated || bairroMoved || activatedMetadataChanged) {
       bumpExplorerRefresh()
     }
     if (reloadList) {
       loadCards({ silent: true })
+    }
+
+    if (navigateToActivated && nextActivated) {
+      setFilter('activated')
+      setSelectedCard(null)
+      setFocusActivate(false)
+      setSearchInput('')
+      setSearch('')
     }
   }
 
@@ -259,7 +273,9 @@ export default function CardsListPage() {
     handleCardSaved(data)
   }
 
-  function toggleStatusFilter(value) {
+  const showVirginCount = filter === 'virgin' && !loading
+
+  const handleFilterChange = useCallback((value) => {
     setFilter((prev) => {
       if (prev !== value && value === 'virgin') {
         setSearchInput('')
@@ -268,75 +284,60 @@ export default function CardsListPage() {
       return value
     })
     setPage(1)
-  }
+  }, [])
 
-  const showSearchField = filter === 'activated'
+  const handleSearchInputChange = useCallback((value) => {
+    setSearchInput(value)
+  }, [])
 
-  const showVirginCount = filter === 'virgin' && !loading
+  const handleAdicionarClick = useCallback(() => {
+    activatedExplorerRef.current?.openCreate()
+  }, [])
+
+  const handleGerarClick = useCallback(() => {
+    setGerarOpen(true)
+  }, [])
 
   return (
     <div className="admin-page admin-page-codes">
-      <div className="toolbar toolbar-home toolbar-codes-top">
-        <div className="filter-group" role="tablist" aria-label="Filtrar por status">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              role="tab"
-              aria-selected={filter === f.value}
-              className={`btn secondary small ${filter === f.value ? 'active' : ''}`}
-              onClick={() => toggleStatusFilter(f.value)}
-            >
-              {f.label}
-            </button>
-          ))}
-          {showSearchField && (
-            <input
-              type="search"
-              className="toolbar-search"
-              placeholder="Buscar ID, estabelecimento, cidade, distrito ou bairro…"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              aria-label="Buscar"
-            />
-          )}
-        </div>
-        {filter !== 'activated' && (
-          <>
-            <div className="toolbar-spacer" aria-hidden />
-            <button type="button" className="btn secondary small" onClick={() => setGerarOpen(true)}>
-              Gerar mais
-            </button>
-            <Link to="/admin/arte" className="btn secondary small">
-              Upload
-            </Link>
-          </>
+      <CardsListStatusToolbar
+        filter={filter}
+        searchInput={searchInput}
+        onSearchInputChange={handleSearchInputChange}
+        onFilterChange={handleFilterChange}
+        onAdicionarClick={handleAdicionarClick}
+        onGerarClick={handleGerarClick}
+        showActivatedExplorer={showActivatedExplorer}
+      />
+
+      <div className="cards-list-panel" aria-live="polite">
+        {showVirginCount && (
+          <p className="muted virgin-cards-count">{total} registro(s) no filtro atual</p>
         )}
-      </div>
 
-      {showVirginCount && (
-        <p className="muted virgin-cards-count">{total} registro(s) no filtro atual</p>
-      )}
+        {loading && !showActivatedExplorer && <p className="muted cards-list-loading">Carregando…</p>}
+        {error && <p className="form-hint error">{error}</p>}
 
-      {loading && !showActivatedExplorer && <p className="muted">Carregando…</p>}
-      {error && <p className="form-hint error">{error}</p>}
+        {showActivatedExplorer && !error && (
+          <ActivatedLocationsExplorer
+            ref={activatedExplorerRef}
+            refreshKey={explorerRefreshKey}
+            onOpenCard={(card) => openCardModal(card, true)}
+            onAnnotationCard={setAnnotationCard}
+          />
+        )}
 
-      {showActivatedExplorer && !error && (
-        <ActivatedLocationsExplorer
-          refreshKey={explorerRefreshKey}
-          onOpenCard={(card) => openCardModal(card, true)}
-          onAnnotationCard={setAnnotationCard}
-        />
-      )}
-
-      {!showActivatedExplorer && !loading && !error && (
-        <>
+        {!showActivatedExplorer && !loading && !error && (
+          <>
           <CardsTable
             cards={cards}
+            virginLayout={filter === 'virgin'}
             showLocationColumn={showActivatedSearch}
             embedAnnotationIcon={showActivatedSearch}
-            hideRowActions={showActivatedSearch}
-            onSelectCard={(card) => openCardModal(card, showActivatedSearch ? true : false)}
+            hideRowActions={showActivatedSearch || filter === 'virgin'}
+            onSelectCard={(card) =>
+              openCardModal(card, filter === 'virgin' || showActivatedSearch ? true : false)
+            }
             onActivateCard={(card) => openCardModal(card, true)}
             onDeactivateCard={requestDeactivateCard}
             onPauseCard={handlePauseCard}
@@ -350,8 +351,9 @@ export default function CardsListPage() {
               onPageChange={setPage}
             />
           )}
-        </>
-      )}
+          </>
+        )}
+      </div>
 
       <CardDetailModal
         card={selectedCard}

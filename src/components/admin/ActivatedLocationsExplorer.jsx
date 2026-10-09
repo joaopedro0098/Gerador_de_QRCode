@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import ActivatedCardMobileList from './ActivatedCardMobileList.jsx'
 import ActivatedNodeMenu from './ActivatedNodeMenu.jsx'
 import CardsTable from './CardsTable.jsx'
@@ -52,11 +52,10 @@ const PATH_DEPTH_BY_VIEW = {
   cards: 3,
 }
 
-export default function ActivatedLocationsExplorer({
-  onOpenCard,
-  onAnnotationCard,
-  refreshKey = 0,
-}) {
+const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplorer(
+  { onOpenCard, onAnnotationCard, refreshKey = 0 },
+  ref,
+) {
   const [activeView, setActiveView] = useState('estado')
   const [selected, setSelected] = useState({
     estado: null,
@@ -207,12 +206,6 @@ export default function ActivatedLocationsExplorer({
     await refreshForView(nextSel, viewAfterDelete)
   }
 
-  function openCreateChild(parentNode, parentLevel) {
-    const childLevel = CHILD_LEVEL[parentLevel]
-    if (!childLevel) return
-    setNodeModal({ mode: 'create', level: childLevel, parentId: parentNode.id, node: null })
-  }
-
   function openEditNode(node, level) {
     setNodeModal({
       mode: 'edit',
@@ -222,9 +215,10 @@ export default function ActivatedLocationsExplorer({
     })
   }
 
-  function openCreate() {
-    if (activeView === 'cards') return
-    const level = activeView
+  const openCreate = useCallback(() => {
+    const view = activeViewRef.current
+    if (view === 'cards') return
+    const level = view
     const parentLevel = LOCATION_LEVELS[LOCATION_LEVELS.indexOf(level) - 1]
     const parentId = parentLevel ? selectedRef.current[parentLevel]?.id : null
     if (level !== 'estado' && !parentId) {
@@ -232,7 +226,9 @@ export default function ActivatedLocationsExplorer({
       return
     }
     setNodeModal({ mode: 'create', level, parentId, node: null })
-  }
+  }, [])
+
+  useImperativeHandle(ref, () => ({ openCreate }), [openCreate])
 
   function renderLayerPathNav() {
     const currentDepth = PATH_DEPTH_BY_VIEW[activeView] ?? 0
@@ -279,14 +275,7 @@ export default function ActivatedLocationsExplorer({
 
       <div className="activated-explorer-stage">
         {(listLevel || activeView === 'cards') && (
-          <div className="location-layer-head">
-            {renderLayerPathNav()}
-            {listLevel && !isFetching && !currentItems.length && (
-              <button type="button" className="btn secondary small" onClick={openCreate}>
-                Adicionar
-              </button>
-            )}
-          </div>
+          <div className="location-layer-head">{renderLayerPathNav()}</div>
         )}
 
         {listLevel && (
@@ -311,9 +300,7 @@ export default function ActivatedLocationsExplorer({
                 </button>
                 <ActivatedNodeMenu
                   label={`Opções: ${node.name}`}
-                  canAdd={Boolean(CHILD_LEVEL[listLevel])}
                   canDelete={listLevel !== 'bairro'}
-                  onAdd={() => openCreateChild(node, listLevel)}
                   onEdit={() => openEditNode(node, listLevel)}
                   onDelete={() => handleDeleteNode(listLevel, node)}
                 />
@@ -321,7 +308,7 @@ export default function ActivatedLocationsExplorer({
             ))}
             {!isFetching && !currentItems.length && (
               <p className="muted location-empty">
-                Nenhum item nesta camada. Use o menu ⋮ para adicionar ou excluir a camada vazia.
+                Nenhum item nesta camada. Use Adicionar no topo ou o menu ⋮ para excluir a camada vazia.
               </p>
             )}
           </div>
@@ -364,4 +351,6 @@ export default function ActivatedLocationsExplorer({
       />
     </div>
   )
-}
+})
+
+export default ActivatedLocationsExplorer

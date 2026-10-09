@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
 import ActivateForm from './ActivateForm.jsx'
 import { isCardActivated } from '../../utils/cardStatus.js'
@@ -32,12 +32,23 @@ export default function CardDetailModal({
   const [qrLoading, setQrLoading] = useState(true)
   const [displayCard, setDisplayCard] = useState(card)
   const [locationPath, setLocationPath] = useState('')
+  const [activatedSaveBusy, setActivatedSaveBusy] = useState(false)
+  const activateFormRef = useRef(null)
 
   const isOpen = activateOnly ? open : Boolean(card)
 
   useEffect(() => {
     setDisplayCard(card)
-  }, [card?.id, card?.code, card?.destination_url, card?.nfc_url, card?.activated_at, card?.location_bairro_id])
+  }, [
+    card?.id,
+    card?.code,
+    card?.destination_url,
+    card?.nfc_url,
+    card?.activated_at,
+    card?.location_bairro_id,
+    card?.notes,
+    card?.paused,
+  ])
 
   useEffect(() => {
     if (!isOpen || !card || activateOnly) return
@@ -54,13 +65,11 @@ export default function CardDetailModal({
     }
   }, [card?.code, activateOnly, isOpen])
 
-  const virginActivateFlow =
-    Boolean(card) && focusActivate && displayCard && !isCardActivated(displayCard)
   const editingActivatedCard = Boolean(displayCard && isCardActivated(displayCard))
 
   useEffect(() => {
     const bairroId = displayCard?.location_bairro_id
-    if (!editingActivatedCard || virginActivateFlow || activateOnly || !bairroId) {
+    if (!editingActivatedCard || activateOnly || !bairroId) {
       setLocationPath('')
       return
     }
@@ -71,13 +80,13 @@ export default function CardDetailModal({
     return () => {
       cancelled = true
     }
-  }, [displayCard?.location_bairro_id, editingActivatedCard, virginActivateFlow, activateOnly])
+  }, [displayCard?.location_bairro_id, editingActivatedCard, activateOnly])
 
   if (!isOpen) return null
 
-  function handleSaved(updated) {
+  function handleSaved(updated, opts) {
     setDisplayCard(updated)
-    onSaved?.(updated)
+    onSaved?.(updated, opts)
   }
 
   const modalTitle = displayCard?.code
@@ -85,12 +94,20 @@ export default function CardDetailModal({
     : activateOnly
       ? 'Ativar card'
       : ''
-  const headerMeta = activateOnly || virginActivateFlow ? null : formatModalMeta(displayCard)
+  const headerMeta = activateOnly ? null : formatModalMeta(displayCard)
   const showActivatedFooterActions =
-    !activateOnly &&
-    displayCard &&
-    isCardActivated(displayCard) &&
-    (onPauseCard || onDeactivateCard)
+    !activateOnly && displayCard && isCardActivated(displayCard)
+
+  async function handleActivatedSaveClick() {
+    const save = activateFormRef.current?.saveActivatedEdit
+    if (!save) return
+    setActivatedSaveBusy(true)
+    try {
+      await save()
+    } finally {
+      setActivatedSaveBusy(false)
+    }
+  }
 
   return (
     <Modal
@@ -99,9 +116,9 @@ export default function CardDetailModal({
       headerMeta={headerMeta}
       onClose={onClose}
       wide
-      cardLayout={!activateOnly && Boolean(card) && !virginActivateFlow}
+      cardLayout={!activateOnly && Boolean(card)}
     >
-      {!activateOnly && card && !virginActivateFlow && (
+      {!activateOnly && card && (
         <section className="modal-section modal-section-qr">
           {qrLoading ? (
             <p className="muted">Gerando QR…</p>
@@ -119,15 +136,25 @@ export default function CardDetailModal({
 
       <section className="modal-section modal-section-activate" id="modal-activate-section">
         <ActivateForm
+          ref={activateFormRef}
           card={activateOnly ? null : displayCard}
           standalone={activateOnly}
           focusLinkOnMount={focusActivate}
           hideActivateButton={editingActivatedCard}
           hideBairroField={editingActivatedCard}
+          virginActivationUi={!activateOnly && Boolean(displayCard) && !editingActivatedCard}
           onSaved={handleSaved}
         />
         {showActivatedFooterActions && (
           <div className="card-detail-footer-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={activatedSaveBusy}
+              onClick={() => void handleActivatedSaveClick()}
+            >
+              {activatedSaveBusy ? 'Salvando…' : 'Salvar'}
+            </button>
             {onPauseCard && (
               <button
                 type="button"

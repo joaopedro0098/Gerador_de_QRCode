@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase.js'
 import {
   CARD_FIELDS,
   activateComplete,
   activateNfc,
   activateQr,
+  activateVirginCard,
+  saveActivatedCardFields,
   isCardActivated,
   isNfcTagWriteRequired,
 } from '../../utils/cardActivation.js'
@@ -17,14 +19,18 @@ import { createNfcWriteSession, isNfcSupported } from '../../utils/nfc.js'
 import { createNfcShortUrlPromise } from '../../utils/shortLinks.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
-export default function ActivateForm({
-  card = null,
-  standalone = false,
-  focusLinkOnMount = false,
-  hideActivateButton = false,
-  hideBairroField = false,
-  onSaved,
-}) {
+const ActivateForm = forwardRef(function ActivateForm(
+  {
+    card = null,
+    standalone = false,
+    focusLinkOnMount = false,
+    hideActivateButton = false,
+    hideBairroField = false,
+    virginActivationUi = false,
+    onSaved,
+  },
+  ref,
+) {
   const linkInputRef = useRef(null)
   const [code, setCode] = useState(card?.code ?? '')
   const [destinationUrl, setDestinationUrl] = useState('')
@@ -132,12 +138,24 @@ export default function ActivateForm({
     linkInputRef.current?.focus({ preventScroll: true })
   }, [focusLinkOnMount, loadingCard, existing?.id])
 
-  function finishSuccess(data, text, { tone = null } = {}) {
+  function finishSuccess(data, text, { tone = null, navigateToActivated = false } = {}) {
     setExisting(data)
     setError(null)
     setMessage(text)
     setSuccessTone(tone)
-    onSaved?.(data)
+    onSaved?.(data, { navigateToActivated })
+  }
+
+  function validateVirginBairroAndEstablishment() {
+    if (!locationBairroId) {
+      setError('Selecione ou crie um bairro.')
+      return false
+    }
+    if (!notes.trim()) {
+      setError('Informe o nome do estabelecimento.')
+      return false
+    }
+    return true
   }
 
   function askBairroChangeConfirm(newBairroId) {
@@ -210,6 +228,40 @@ export default function ActivateForm({
     closeBairroConfirm(false)
   }
 
+  const activatedEditUi = hideBairroField && hideActivateButton && !virginActivationUi && !standalone
+
+  const handleActivatedEditSave = async () => {
+    setError(null)
+    setMessage(null)
+    setNfcHint(null)
+    if (!existing) {
+      setError('Não foi possível carregar este ID.')
+      return
+    }
+
+    setBusy('activated-save')
+    const { data, error: saveError } = await saveActivatedCardFields(supabase, existing.id, {
+      notes,
+      destinationUrl,
+      nfcUrl,
+      storedDestinationUrl: existing.destination_url,
+      storedNfcUrl: existing.nfc_url,
+    })
+    setBusy(null)
+
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+
+    finishSuccess(data, 'Alterações salvas.')
+  }
+
+  useImperativeHandle(ref, () => ({
+    saveActivatedEdit: handleActivatedEditSave,
+    isSaving: busy === 'activated-save',
+  }))
+
   async function handleSaveEstablishment() {
     setError(null)
     setMessage(null)
@@ -267,6 +319,53 @@ export default function ActivateForm({
     )
   }
 
+  async function handleVirginAtivar() {
+    setError(null)
+    setMessage(null)
+    setSuccessTone(null)
+    setNfcHint(null)
+    if (!existing) {
+      setError('Não foi possível carregar este ID.')
+      return
+    }
+    if (!validateVirginBairroAndEstablishment()) return
+
+    const qr = destinationUrl.trim()
+    const nfc = nfcUrl.trim()
+    const storedNfc = existing.nfc_url?.trim() ?? ''
+    if (!qr && !nfc && !storedNfc) {
+      setError('Informe o link do QR ou grave o NFC antes de ativar.')
+      return
+    }
+
+    if (!(await ensureBairroChangeBeforeSave())) return
+
+    const wasActivated = isCardActivated(existing)
+    setBusy('virgin-activate')
+
+    const { data, error: saveError } = await activateVirginCard(supabase, existing.id, {
+      destinationUrl: qr,
+      nfcUrl: nfc,
+      storedNfcUrl: storedNfc,
+      notes,
+      locationBairroId,
+      wasActivated,
+      existingBairroId: existing.location_bairro_id,
+    })
+
+    setBusy(null)
+
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+
+    const becameActivated = !wasActivated && isCardActivated(data)
+    finishSuccess(data, becameActivated ? 'Card ativado.' : 'Dados salvos.', {
+      navigateToActivated: becameActivated,
+    })
+  }
+
   async function handleGerarNfc() {
     setError(null)
     setMessage(null)
@@ -313,8 +412,16 @@ export default function ActivateForm({
       return
     }
 
-    setBusy('nfc')
     const wasActivated = isCardActivated(existing)
+    const nfcDraftOnly = virginActivationUi && !wasActivated
+
+    if (nfcDraftOnly && !validateVirginBairroAndEstablishment()) {
+      nfcWriteSession.abort()
+      return
+    }
+
+    setBusy('nfc')
+
     const result = await activateNfc(supabase, existing.id, nfcUrl, {
       locationBairroId,
       wasActivated,
@@ -325,6 +432,8 @@ export default function ActivateForm({
       storedNfcUid: existing.nfc_uid,
       storedShortCode: existing.short_code,
       forceTagWrite: true,
+      withoutActivation: nfcDraftOnly,
+      notes: nfcDraftOnly ? notes : undefined,
     })
     setBusy(null)
 
@@ -454,20 +563,36 @@ export default function ActivateForm({
   const normalizedCode = normalizeCode(code)
   const showCodeField = standalone
   const formUnavailable = loadingCard || !existing
-  const formLocked = formUnavailable || busy === 'full'
+  const formLocked =
+    formUnavailable || busy === 'full' || busy === 'virgin-activate' || busy === 'activated-save'
 
   function fieldInputDisabled() {
-    return formUnavailable || busy === 'full'
+    return (
+      formUnavailable || busy === 'full' || busy === 'virgin-activate' || busy === 'activated-save'
+    )
   }
 
   function fieldButtonDisabled(forField) {
     if (formUnavailable) return true
-    if (busy === 'full') return true
+    if (busy === 'full' || busy === 'virgin-activate' || busy === 'activated-save') return true
     return busy === forField
   }
 
+  const showStandaloneAtivarSubmit = !hideActivateButton && !virginActivationUi
+
+  function handleFormSubmit(e) {
+    e.preventDefault()
+    if (virginActivationUi) {
+      void handleVirginAtivar()
+      return
+    }
+    if (showStandaloneAtivarSubmit) {
+      void handleAtivacaoCompleta(e)
+    }
+  }
+
   return (
-    <form className="stack-form activate-form" onSubmit={handleAtivacaoCompleta}>
+    <form className="stack-form activate-form" onSubmit={handleFormSubmit}>
       {showCodeField && (
         <label>
           ID do card
@@ -500,7 +625,7 @@ export default function ActivateForm({
       {!loadingCard && existing && (
         <label>
           Estabelecimento
-          <div className="activate-inline-actions">
+          {virginActivationUi || activatedEditUi ? (
             <input
               type="text"
               value={notes}
@@ -509,21 +634,32 @@ export default function ActivateForm({
               placeholder="insira o nome do estabelecimento"
               disabled={fieldInputDisabled()}
             />
-            <button
-              type="button"
-              className="btn secondary small"
-              disabled={fieldButtonDisabled('notes')}
-              onClick={handleSaveEstablishment}
-            >
-              {busy === 'notes' ? '…' : 'Salvar'}
-            </button>
-          </div>
+          ) : (
+            <div className="activate-inline-actions">
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onKeyDown={blockEmptyBackspaceNav}
+                placeholder="insira o nome do estabelecimento"
+                disabled={fieldInputDisabled()}
+              />
+              <button
+                type="button"
+                className="btn secondary small"
+                disabled={fieldButtonDisabled('notes')}
+                onClick={handleSaveEstablishment}
+              >
+                {busy === 'notes' ? '…' : 'Salvar'}
+              </button>
+            </div>
+          )}
         </label>
       )}
 
       <label>
         QR Code
-        <div className="activate-inline-actions">
+        {virginActivationUi || activatedEditUi ? (
           <input
             ref={linkInputRef}
             type="text"
@@ -535,15 +671,29 @@ export default function ActivateForm({
             placeholder="Cole o link aqui"
             disabled={fieldInputDisabled()}
           />
-          <button
-            type="button"
-            className="btn secondary small"
-            disabled={fieldButtonDisabled('qr')}
-            onClick={handleGerarQr}
-          >
-            {busy === 'qr' ? 'Salvando…' : 'Salvar'}
-          </button>
-        </div>
+        ) : (
+          <div className="activate-inline-actions">
+            <input
+              ref={linkInputRef}
+              type="text"
+              inputMode="url"
+              autoComplete="off"
+              value={destinationUrl}
+              onChange={(e) => setDestinationUrl(e.target.value)}
+              onKeyDown={blockEmptyBackspaceNav}
+              placeholder="Cole o link aqui"
+              disabled={fieldInputDisabled()}
+            />
+            <button
+              type="button"
+              className="btn secondary small"
+              disabled={fieldButtonDisabled('qr')}
+              onClick={handleGerarQr}
+            >
+              {busy === 'qr' ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        )}
       </label>
 
       <label>
@@ -565,7 +715,7 @@ export default function ActivateForm({
             disabled={fieldButtonDisabled('nfc')}
             onClick={handleGerarNfc}
           >
-            {busy === 'nfc' ? 'Aproxime a tag…' : 'Salvar'}
+            {busy === 'nfc' ? 'Aproxime a tag…' : 'Gravar'}
           </button>
         </div>
       </label>
@@ -582,7 +732,13 @@ export default function ActivateForm({
         <p className={`form-hint success${successTone === 'nfc' ? ' success-nfc' : ''}`}>{message}</p>
       )}
 
-      {!hideActivateButton && (
+      {virginActivationUi && !loadingCard && existing && (
+        <button type="submit" className="btn primary activate-virgin-save-btn" disabled={formLocked}>
+          {busy === 'virgin-activate' ? 'Ativando…' : 'Ativar'}
+        </button>
+      )}
+
+      {showStandaloneAtivarSubmit && (
         <button type="submit" className="btn primary" disabled={formLocked}>
           {busy === 'full' ? 'Processando…' : 'Ativar'}
         </button>
@@ -596,4 +752,6 @@ export default function ActivateForm({
       />
     </form>
   )
-}
+})
+
+export default ActivateForm
