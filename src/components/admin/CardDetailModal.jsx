@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
 import ActivateForm from './ActivateForm.jsx'
 import { isCardActivated } from '../../utils/cardStatus.js'
+import { getLocationPathLabels } from '../../utils/locationApi.js'
 import { qrSvgForCode } from '../../utils/qr.js'
 
 function formatModalMeta(card) {
@@ -30,12 +31,13 @@ export default function CardDetailModal({
   const [svg, setSvg] = useState('')
   const [qrLoading, setQrLoading] = useState(true)
   const [displayCard, setDisplayCard] = useState(card)
+  const [locationPath, setLocationPath] = useState('')
 
   const isOpen = activateOnly ? open : Boolean(card)
 
   useEffect(() => {
     setDisplayCard(card)
-  }, [card?.id, card?.code, card?.destination_url, card?.nfc_url, card?.activated_at])
+  }, [card?.id, card?.code, card?.destination_url, card?.nfc_url, card?.activated_at, card?.location_bairro_id])
 
   useEffect(() => {
     if (!isOpen || !card || activateOnly) return
@@ -52,15 +54,31 @@ export default function CardDetailModal({
     }
   }, [card?.code, activateOnly, isOpen])
 
+  const virginActivateFlow =
+    Boolean(card) && focusActivate && displayCard && !isCardActivated(displayCard)
+  const editingActivatedCard = Boolean(displayCard && isCardActivated(displayCard))
+
+  useEffect(() => {
+    const bairroId = displayCard?.location_bairro_id
+    if (!editingActivatedCard || virginActivateFlow || activateOnly || !bairroId) {
+      setLocationPath('')
+      return
+    }
+    let cancelled = false
+    getLocationPathLabels(bairroId).then(({ data }) => {
+      if (!cancelled) setLocationPath(data?.trim() ? data : '')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [displayCard?.location_bairro_id, editingActivatedCard, virginActivateFlow, activateOnly])
+
   if (!isOpen) return null
 
   function handleSaved(updated) {
     setDisplayCard(updated)
     onSaved?.(updated)
   }
-
-  const virginActivateFlow =
-    Boolean(card) && focusActivate && displayCard && !isCardActivated(displayCard)
 
   const modalTitle = displayCard?.code
     ? `ID: ${displayCard.code}`
@@ -88,13 +106,14 @@ export default function CardDetailModal({
           {qrLoading ? (
             <p className="muted">Gerando QR…</p>
           ) : (
-            <>
-              <div
-                className="qr-preview qr-preview-compact"
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
-            </>
+            <div
+              className="qr-preview qr-preview-compact"
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
           )}
+          {locationPath ? (
+            <p className="card-detail-location-path muted">{locationPath}</p>
+          ) : null}
         </section>
       )}
 
@@ -103,11 +122,12 @@ export default function CardDetailModal({
           card={activateOnly ? null : displayCard}
           standalone={activateOnly}
           focusLinkOnMount={focusActivate}
-          hideActivateButton={Boolean(displayCard && isCardActivated(displayCard))}
+          hideActivateButton={editingActivatedCard}
+          hideBairroField={editingActivatedCard}
           onSaved={handleSaved}
         />
         {showActivatedFooterActions && (
-          <div className="activated-card-detail-actions card-detail-footer-actions">
+          <div className="card-detail-footer-actions">
             {onPauseCard && (
               <button
                 type="button"

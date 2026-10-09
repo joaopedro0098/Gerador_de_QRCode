@@ -5,7 +5,7 @@ function establishmentLabel(card) {
   return name || 'Sem estabelecimento'
 }
 
-export default function ActivatedCardMobileList({ cards, onActivateCard, onAnnotationCard }) {
+export default function ActivatedCardMobileList({ cards, onOpenCard, onAnnotationCard }) {
   if (!cards.length) {
     return null
   }
@@ -18,7 +18,7 @@ export default function ActivatedCardMobileList({ cards, onActivateCard, onAnnot
             <button
               type="button"
               className="activated-mobile-card-main"
-              onClick={() => onActivateCard?.(card)}
+              onClick={() => onOpenCard?.(card)}
             >
               <span className="activated-mobile-card-name">{establishmentLabel(card)}</span>
             </button>

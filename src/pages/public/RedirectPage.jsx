@@ -6,7 +6,7 @@ import { normalizeCode } from '../../utils/codes.js'
 
 const MESSAGES = {
   not_found: {
-    title: 'Código não encontrado',
+    title: 'ID não encontrado',
     body: 'Este QR code não está cadastrado no sistema.',
   },
   not_activated: {
@@ -42,7 +42,7 @@ export default function RedirectPage() {
           setState({
             kind: 'error',
             title: 'Algo deu errado',
-            body: 'Não foi possível consultar este código. Tente novamente em instantes.',
+            body: 'Não foi possível consultar este ID. Tente novamente em instantes.',
           })
           return
         }

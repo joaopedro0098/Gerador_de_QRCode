@@ -53,10 +53,7 @@ const PATH_DEPTH_BY_VIEW = {
 }
 
 export default function ActivatedLocationsExplorer({
-  onSelectCard,
-  onActivateCard,
-  onDeactivateCard,
-  onPauseCard,
+  onOpenCard,
   onAnnotationCard,
   refreshKey = 0,
 }) {
@@ -105,10 +102,8 @@ export default function ActivatedLocationsExplorer({
       setActiveView(view)
       activeViewRef.current = view
 
-      if (view === 'cards') {
-        setCurrentItems([])
-      } else {
-        setCurrentItems([])
+      setCurrentItems([])
+      if (view !== 'cards') {
         setCards([])
       }
 
@@ -338,17 +333,16 @@ export default function ActivatedLocationsExplorer({
               <CardsTable
                 cards={cards}
                 embedAnnotationIcon
-                onSelectCard={onSelectCard}
-                onActivateCard={onActivateCard}
-                onDeactivateCard={onDeactivateCard}
-                onPauseCard={onPauseCard}
+                hideRowActions
+                onSelectCard={onOpenCard}
+                onActivateCard={onOpenCard}
                 onAnnotationCard={onAnnotationCard}
               />
             )}
             {isMobile && (
               <ActivatedCardMobileList
                 cards={cards}
-                onActivateCard={onActivateCard}
+                onOpenCard={onOpenCard}
                 onAnnotationCard={onAnnotationCard}
               />
             )}

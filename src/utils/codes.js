@@ -20,7 +20,7 @@ export function formatLojaCode(number) {
   }
   const code = `${CODE_PREFIX}${n}`
   if (code.length > CODE_MAX_LENGTH) {
-    throw new Error(`Código "${code}" excede ${CODE_MAX_LENGTH} caracteres.`)
+    throw new Error(`O ID "${code}" excede ${CODE_MAX_LENGTH} caracteres.`)
   }
   return code
 }
@@ -41,7 +41,7 @@ export function maxLojaNumberFromCodes(codes) {
   return max
 }
 
-/** Próximos `count` códigos sequenciais após o maior `lojaN` já usado. */
+/** Próximos `count` IDs sequenciais após o maior `lojaN` já usado. */
 export function nextSequentialLojaCodes(existingCodes, count) {
   let start = maxLojaNumberFromCodes(existingCodes) + 1
   const result = []

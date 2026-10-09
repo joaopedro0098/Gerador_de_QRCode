@@ -30,7 +30,7 @@ export default function BatchGenerateForm() {
     }
 
     setLoading(true)
-    setProgress('Reservando códigos sequenciais…')
+    setProgress('Reservando IDs sequenciais…')
 
     try {
       const { data: existingRows, error: fetchError } = await supabase
@@ -76,7 +76,7 @@ export default function BatchGenerateForm() {
       </label>
 
       <p className="form-hint muted">
-        Códigos sequenciais: loja1, loja2, loja3… (até 15 caracteres). Apenas cria cards virgens no
+        IDs sequenciais: loja1, loja2, loja3… (até 15 caracteres). Apenas cria cards virgens no
         sistema.
       </p>
 

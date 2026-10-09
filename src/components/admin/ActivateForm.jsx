@@ -22,6 +22,7 @@ export default function ActivateForm({
   standalone = false,
   focusLinkOnMount = false,
   hideActivateButton = false,
+  hideBairroField = false,
   onSaved,
 }) {
   const linkInputRef = useRef(null)
@@ -186,6 +187,7 @@ export default function ActivateForm({
   }
 
   async function ensureBairroChangeBeforeSave() {
+    if (hideBairroField) return true
     if (!existing || !isActiveCardBairroChange(existing, locationBairroId)) {
       return true
     }
@@ -213,7 +215,7 @@ export default function ActivateForm({
     setMessage(null)
     setNfcHint(null)
     if (!existing) {
-      setError('Não foi possível carregar este código.')
+      setError('Não foi possível carregar este ID.')
       return
     }
 
@@ -240,7 +242,7 @@ export default function ActivateForm({
     setMessage(null)
     setNfcHint(null)
     if (!existing) {
-      setError('Não foi possível carregar este código.')
+      setError('Não foi possível carregar este ID.')
       return
     }
     if (!(await ensureBairroChangeBeforeSave())) return
@@ -272,7 +274,7 @@ export default function ActivateForm({
     setNfcHint(null)
     setNfcDebug(null)
     if (!existing) {
-      setError('Não foi possível carregar este código.')
+      setError('Não foi possível carregar este ID.')
       return
     }
 
@@ -357,8 +359,8 @@ export default function ActivateForm({
     if (!existing) {
       setError(
         standalone
-          ? 'Informe um código válido existente no sistema.'
-          : 'Não foi possível carregar este código.',
+          ? 'Informe um ID válido existente no sistema.'
+          : 'Não foi possível carregar este ID.',
       )
       return
     }
@@ -468,7 +470,7 @@ export default function ActivateForm({
     <form className="stack-form activate-form" onSubmit={handleAtivacaoCompleta}>
       {showCodeField && (
         <label>
-          Código do card
+          ID do card
           <input
             type="text"
             value={code}
@@ -483,10 +485,10 @@ export default function ActivateForm({
 
       {loadingCard && <p className="muted">Carregando…</p>}
       {!loadingCard && showCodeField && isLojaCode(normalizedCode) && !existing && (
-        <p className="form-hint error">Este código não existe no sistema.</p>
+        <p className="form-hint error">Este ID não existe no sistema.</p>
       )}
 
-      {!loadingCard && existing && (
+      {!loadingCard && existing && !hideBairroField && (
         <BairroActivateField
           bairroId={locationBairroId}
           onBairroIdChange={setLocationBairroId}

@@ -1,16 +1,15 @@
+import { isCardActivated } from '../../utils/cardStatus.js'
+import AnnotationLeafButton from './AnnotationLeafButton.jsx'
+
 function formatDateOnly(value) {
   if (!value) return '—'
   return new Date(value).toLocaleDateString('pt-BR')
 }
 
-import { isCardActivated } from '../../utils/cardStatus.js'
-
 function formatDateTime(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString('pt-BR')
 }
-
-import AnnotationLeafButton from './AnnotationLeafButton.jsx'
 
 export default function CardsTable({
   cards,
@@ -20,12 +19,14 @@ export default function CardsTable({
   onPauseCard,
   onAnnotationCard,
   showLocationColumn = false,
-  hideCodeColumnHeader = false,
   embedAnnotationIcon = false,
+  hideRowActions = false,
 }) {
   if (!cards.length) {
-    return <p className="muted">Nenhum código encontrado.</p>
+    return <p className="muted">Nenhum ID encontrado.</p>
   }
+
+  const showActionsColumn = !hideRowActions
 
   return (
     <div className="table-wrap">
@@ -33,13 +34,13 @@ export default function CardsTable({
         <thead>
           <tr>
             {!embedAnnotationIcon && <th aria-label="Anotações" />}
-            <th>{hideCodeColumnHeader ? '' : 'Código'}</th>
+            <th>ID</th>
             <th>Status</th>
             <th>Estabelecimento</th>
             {showLocationColumn && <th>Local</th>}
             <th>Criado em</th>
             <th>Ativado em</th>
-            <th></th>
+            {showActionsColumn && <th aria-hidden />}
           </tr>
         </thead>
         <tbody>
@@ -68,7 +69,9 @@ export default function CardsTable({
                     {activated ? (card.paused ? 'Pausado' : 'Ativado') : 'Virgem'}
                   </span>
                 </td>
-                <td className={`cell-notes${embedAnnotationIcon && activated ? ' cell-notes-with-annotation' : ''}`}>
+                <td
+                  className={`cell-notes${embedAnnotationIcon && activated ? ' cell-notes-with-annotation' : ''}`}
+                >
                   {embedAnnotationIcon && activated ? (
                     <span className="cell-notes-annotation-row">
                       <span className="cell-notes-text">{card.notes || '—'}</span>
@@ -83,35 +86,37 @@ export default function CardsTable({
                 )}
                 <td>{formatDateOnly(card.created_at)}</td>
                 <td>{formatDateTime(card.activated_at)}</td>
-                <td className="cell-actions">
-                  <div className="cell-actions-group">
-                    <button
-                      type="button"
-                      className="btn secondary small"
-                      onClick={() => onActivateCard(card)}
-                    >
-                      {activated ? 'Editar' : 'Ativar'}
-                    </button>
-                    {activated && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn secondary small"
-                          onClick={() => onPauseCard?.(card)}
-                        >
-                          {card.paused ? 'Retomar' : 'Pausar'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn secondary small danger"
-                          onClick={() => onDeactivateCard(card)}
-                        >
-                          Desativar
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
+                {showActionsColumn && (
+                  <td className="cell-actions">
+                    <div className="cell-actions-group">
+                      <button
+                        type="button"
+                        className="btn secondary small"
+                        onClick={() => onActivateCard(card)}
+                      >
+                        {activated ? 'Editar' : 'Ativar'}
+                      </button>
+                      {activated && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn secondary small"
+                            onClick={() => onPauseCard?.(card)}
+                          >
+                            {card.paused ? 'Retomar' : 'Pausar'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn secondary small danger"
+                            onClick={() => onDeactivateCard(card)}
+                          >
+                            Desativar
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             )
           })}

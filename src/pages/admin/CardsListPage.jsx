@@ -294,7 +294,7 @@ export default function CardsListPage() {
             <input
               type="search"
               className="toolbar-search"
-              placeholder="Buscar código, estabelecimento, cidade, distrito ou bairro…"
+              placeholder="Buscar ID, estabelecimento, cidade, distrito ou bairro…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               aria-label="Buscar"
@@ -324,10 +324,7 @@ export default function CardsListPage() {
       {showActivatedExplorer && !error && (
         <ActivatedLocationsExplorer
           refreshKey={explorerRefreshKey}
-          onSelectCard={(card) => openCardModal(card, false)}
-          onActivateCard={(card) => openCardModal(card, true)}
-          onDeactivateCard={requestDeactivateCard}
-          onPauseCard={handlePauseCard}
+          onOpenCard={(card) => openCardModal(card, true)}
           onAnnotationCard={setAnnotationCard}
         />
       )}
@@ -336,9 +333,10 @@ export default function CardsListPage() {
         <>
           <CardsTable
             cards={cards}
-            hideCodeColumnHeader={filter === 'virgin'}
             showLocationColumn={showActivatedSearch}
-            onSelectCard={(card) => openCardModal(card, false)}
+            embedAnnotationIcon={showActivatedSearch}
+            hideRowActions={showActivatedSearch}
+            onSelectCard={(card) => openCardModal(card, showActivatedSearch ? true : false)}
             onActivateCard={(card) => openCardModal(card, true)}
             onDeactivateCard={requestDeactivateCard}
             onPauseCard={handlePauseCard}

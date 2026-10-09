@@ -284,7 +284,7 @@ export default function ArtSessionCard({
     try {
       const card = await resolveSpecificCard()
       if (!card) {
-        setError('Informe um código ou estabelecimento para buscar.')
+        setError('Informe um ID ou estabelecimento para buscar.')
         return
       }
       setConfirmedPool([])
@@ -312,7 +312,7 @@ export default function ArtSessionCard({
     if (err) throw new Error(err.message)
     if (!data?.length) throw new Error('Nenhum card encontrado para essa busca.')
     if (data.length > 1) {
-      throw new Error('Mais de um resultado — refine código ou estabelecimento.')
+      throw new Error('Mais de um resultado — refine o ID ou estabelecimento.')
     }
     setSpecificCard(data[0])
     return data[0]
@@ -538,7 +538,7 @@ export default function ArtSessionCard({
               <div className="art-input-with-btn">
                 <input
                   type="search"
-                  placeholder="insira um código ou estabelecimento"
+                  placeholder="insira um ID ou estabelecimento"
                   value={specificInput}
                   onChange={(e) => {
                     setSpecificInput(e.target.value)
@@ -560,7 +560,7 @@ export default function ArtSessionCard({
             {showMeta && previewCard && (
               <div className="art-preview-meta">
                 <p className="art-preview-line">
-                  <span className="art-preview-label">Código:</span> {previewCard.code}
+                  <span className="art-preview-label">ID:</span> {previewCard.code}
                 </p>
                 <p className="art-preview-line muted">
                   <span className="art-preview-label">Estabelecimento:</span>{' '}

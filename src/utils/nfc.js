@@ -41,7 +41,7 @@ function mapNfcError(err) {
   if (msg.includes('ndefreader')) {
     return 'Use Chrome no Android, em HTTPS, com NFC ligado.'
   }
-  return `Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG. (código: ${err?.name || 'desconhecido'})`
+  return `Não foi possível gravar a tag. Afaste, encoste de novo ou teste outra tag NTAG. (tipo: ${err?.name || 'desconhecido'})`
 }
 
 function buildNfcWriteDiagnostic(err, event, urlForLog) {

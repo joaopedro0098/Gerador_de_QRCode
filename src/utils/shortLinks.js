@@ -210,7 +210,7 @@ export async function ensureShortLinkForCard(supabase, cardId, targetUrl, existi
     shortUrl: null,
     code: null,
     error: {
-      message: 'Não foi possível gerar um código único. Tente novamente.',
+      message: 'Não foi possível gerar um ID curto único. Tente novamente.',
       debug: pgDebug(lastInsertError, {
         step: 'insert_exhausted',
         attempts: INSERT_MAX_ATTEMPTS,
