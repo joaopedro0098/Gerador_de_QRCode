@@ -21,6 +21,7 @@ export default function ActivateForm({
   card = null,
   standalone = false,
   focusLinkOnMount = false,
+  hideActivateButton = false,
   onSaved,
 }) {
   const linkInputRef = useRef(null)
@@ -579,9 +580,11 @@ export default function ActivateForm({
         <p className={`form-hint success${successTone === 'nfc' ? ' success-nfc' : ''}`}>{message}</p>
       )}
 
-      <button type="submit" className="btn primary" disabled={formLocked}>
-        {busy === 'full' ? 'Processando…' : 'Ativar'}
-      </button>
+      {!hideActivateButton && (
+        <button type="submit" className="btn primary" disabled={formLocked}>
+          {busy === 'full' ? 'Processando…' : 'Ativar'}
+        </button>
+      )}
 
       <ChangeBairroConfirmModal
         open={bairroConfirmOpen}

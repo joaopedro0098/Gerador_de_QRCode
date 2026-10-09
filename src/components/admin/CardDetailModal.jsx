@@ -24,6 +24,8 @@ export default function CardDetailModal({
   onSaved,
   focusActivate = false,
   activateOnly = false,
+  onPauseCard,
+  onDeactivateCard,
 }) {
   const [svg, setSvg] = useState('')
   const [qrLoading, setQrLoading] = useState(true)
@@ -66,6 +68,11 @@ export default function CardDetailModal({
       ? 'Ativar card'
       : ''
   const headerMeta = activateOnly || virginActivateFlow ? null : formatModalMeta(displayCard)
+  const showActivatedFooterActions =
+    !activateOnly &&
+    displayCard &&
+    isCardActivated(displayCard) &&
+    (onPauseCard || onDeactivateCard)
 
   return (
     <Modal
@@ -96,8 +103,31 @@ export default function CardDetailModal({
           card={activateOnly ? null : displayCard}
           standalone={activateOnly}
           focusLinkOnMount={focusActivate}
+          hideActivateButton={Boolean(displayCard && isCardActivated(displayCard))}
           onSaved={handleSaved}
         />
+        {showActivatedFooterActions && (
+          <div className="activated-card-detail-actions card-detail-footer-actions">
+            {onPauseCard && (
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => onPauseCard(displayCard)}
+              >
+                {displayCard.paused ? 'Retomar' : 'Pausar'}
+              </button>
+            )}
+            {onDeactivateCard && (
+              <button
+                type="button"
+                className="btn secondary danger"
+                onClick={() => onDeactivateCard(displayCard)}
+              >
+                Desativar
+              </button>
+            )}
+          </div>
+        )}
       </section>
     </Modal>
   )

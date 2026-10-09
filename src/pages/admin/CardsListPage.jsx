@@ -272,18 +272,11 @@ export default function CardsListPage() {
 
   const showSearchField = filter === 'activated'
 
-  return (
-    <div className="admin-page">
-      <header className="page-header">
-        <h1>Códigos</h1>
-        <p className="muted">
-          {showActivatedExplorer
-            ? 'Estado → Cidade → Distrito → Bairro → QR codes (clique em cada camada)'
-            : `${total} registro(s) no filtro atual`}
-        </p>
-      </header>
+  const showVirginCount = filter === 'virgin' && !loading
 
-      <div className="toolbar toolbar-home">
+  return (
+    <div className="admin-page admin-page-codes">
+      <div className="toolbar toolbar-home toolbar-codes-top">
         <div className="filter-group" role="tablist" aria-label="Filtrar por status">
           {STATUS_FILTERS.map((f) => (
             <button
@@ -308,14 +301,22 @@ export default function CardsListPage() {
             />
           )}
         </div>
-        <div className="toolbar-spacer" aria-hidden />
-        <button type="button" className="btn secondary small" onClick={() => setGerarOpen(true)}>
-          Gerar mais
-        </button>
-        <Link to="/admin/arte" className="btn secondary small">
-          Upload
-        </Link>
+        {filter !== 'activated' && (
+          <>
+            <div className="toolbar-spacer" aria-hidden />
+            <button type="button" className="btn secondary small" onClick={() => setGerarOpen(true)}>
+              Gerar mais
+            </button>
+            <Link to="/admin/arte" className="btn secondary small">
+              Upload
+            </Link>
+          </>
+        )}
       </div>
+
+      {showVirginCount && (
+        <p className="muted virgin-cards-count">{total} registro(s) no filtro atual</p>
+      )}
 
       {loading && !showActivatedExplorer && <p className="muted">Carregando…</p>}
       {error && <p className="form-hint error">{error}</p>}
@@ -335,6 +336,7 @@ export default function CardsListPage() {
         <>
           <CardsTable
             cards={cards}
+            hideCodeColumnHeader={filter === 'virgin'}
             showLocationColumn={showActivatedSearch}
             onSelectCard={(card) => openCardModal(card, false)}
             onActivateCard={(card) => openCardModal(card, true)}
@@ -358,6 +360,8 @@ export default function CardsListPage() {
         focusActivate={focusActivate}
         onClose={closeCardModal}
         onSaved={handleCardSaved}
+        onPauseCard={filter === 'activated' ? handlePauseCard : undefined}
+        onDeactivateCard={filter === 'activated' ? requestDeactivateCard : undefined}
       />
 
       <CardAnnotationModal

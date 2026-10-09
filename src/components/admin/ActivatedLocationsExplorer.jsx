@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import ActivatedCardMobileList from './ActivatedCardMobileList.jsx'
+import ActivatedNodeMenu from './ActivatedNodeMenu.jsx'
 import CardsTable from './CardsTable.jsx'
 import LocationNodeModal from './LocationNodeModal.jsx'
+import { useMaxWidth } from '../../hooks/useMediaQuery.js'
 import {
   CHILD_LEVEL,
   LOCATION_LEVELS,
   LOCATION_LEVEL_LABEL,
-  PARENT_LEVEL,
   deleteLocationNode,
   fetchLocationSubtreeActiveCounts,
   listActivatedCardsInBairro,
@@ -35,6 +37,21 @@ function viewAfterSelectingLevel(level) {
   return CHILD_LEVEL[level]
 }
 
+const LAYER_PATH_STEPS = [
+  { view: 'estado', label: 'Estados' },
+  { view: 'cidade', label: 'Cidades' },
+  { view: 'distrito', label: 'Distritos' },
+  { view: 'bairro', label: 'Bairros' },
+]
+
+const PATH_DEPTH_BY_VIEW = {
+  estado: 0,
+  cidade: 1,
+  distrito: 2,
+  bairro: 3,
+  cards: 3,
+}
+
 export default function ActivatedLocationsExplorer({
   onSelectCard,
   onActivateCard,
@@ -53,11 +70,18 @@ export default function ActivatedLocationsExplorer({
   const [currentItems, setCurrentItems] = useState([])
   const [cards, setCards] = useState([])
   const [activeCountByNodeId, setActiveCountByNodeId] = useState(() => new Map())
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [isFetching, setIsFetching] = useState(false)
   const [nodeModal, setNodeModal] = useState(null)
   const selectedRef = useRef(selected)
   const activeViewRef = useRef(activeView)
+  const fetchGenRef = useRef(0)
+  const isMobile = useMaxWidth(820)
+
+  function blurActiveElement() {
+    const el = document.activeElement
+    if (el instanceof HTMLElement) el.blur()
+  }
 
   useEffect(() => {
     selectedRef.current = selected
@@ -75,24 +99,30 @@ export default function ActivatedLocationsExplorer({
 
   const refreshForView = useCallback(
     async (sel, view) => {
-      setLoading(true)
+      const gen = ++fetchGenRef.current
       setError(null)
-      try {
-        const { counts, error: countsError } = await fetchLocationSubtreeActiveCounts()
-        if (countsError) throw countsError
-        setActiveCountByNodeId(counts)
+      setIsFetching(true)
+      setActiveView(view)
+      activeViewRef.current = view
 
+      if (view === 'cards') {
+        setCurrentItems([])
+      } else {
+        setCurrentItems([])
+        setCards([])
+      }
+
+      try {
         if (view === 'cards') {
           if (!sel.bairro) {
             setCards([])
           } else {
             const { data, error: err } = await listActivatedCardsInBairro(sel.bairro.id)
+            if (gen !== fetchGenRef.current) return
             if (err) throw err
             setCards(data ?? [])
           }
-          setCurrentItems([])
         } else {
-          setCards([])
           let parentId = null
           if (view === 'cidade') {
             if (!sel.estado) throw new Error('Selecione um estado.')
@@ -105,15 +135,24 @@ export default function ActivatedLocationsExplorer({
             parentId = sel.distrito.id
           }
           const items = await loadLevel(view, parentId)
+          if (gen !== fetchGenRef.current) return
           setCurrentItems(items)
         }
-
-        setActiveView(view)
       } catch (e) {
+        if (gen !== fetchGenRef.current) return
         setError(e.message)
       } finally {
-        setLoading(false)
+        if (gen === fetchGenRef.current) {
+          setIsFetching(false)
+        }
       }
+
+      fetchLocationSubtreeActiveCounts().then(({ counts, error: countsError }) => {
+        if (gen !== fetchGenRef.current) return
+        if (!countsError && counts) {
+          setActiveCountByNodeId(counts)
+        }
+      })
     },
     [loadLevel],
   )
@@ -122,14 +161,17 @@ export default function ActivatedLocationsExplorer({
     refreshForView(selectedRef.current, activeViewRef.current)
   }, [refreshKey, refreshForView])
 
-  async function selectNode(level, node) {
+  function selectNode(level, node) {
+    blurActiveElement()
     const nextSel = buildSelection(selectedRef.current, level, node)
     setSelected(nextSel)
+    selectedRef.current = nextSel
     const nextView = viewAfterSelectingLevel(level)
-    await refreshForView(nextSel, nextView)
+    void refreshForView(nextSel, nextView)
   }
 
-  async function goToView(view) {
+  function goToView(view) {
+    blurActiveElement()
     let nextSel = selectedRef.current
     if (view === 'estado') {
       nextSel = { estado: null, cidade: null, distrito: null, bairro: null }
@@ -143,7 +185,8 @@ export default function ActivatedLocationsExplorer({
       if (!nextSel.bairro) return
     }
     setSelected(nextSel)
-    await refreshForView(nextSel, view)
+    selectedRef.current = nextSel
+    void refreshForView(nextSel, view)
   }
 
   async function handleDeleteNode(level, node) {
@@ -156,9 +199,32 @@ export default function ActivatedLocationsExplorer({
     let nextSel = selectedRef.current
     if (nextSel[level]?.id === node.id) {
       nextSel = buildSelection(nextSel, level, null)
-      setSelected(nextSel)
     }
-    await refreshForView(nextSel, activeViewRef.current)
+    setSelected(nextSel)
+    const viewAfterDelete =
+      level === 'estado'
+        ? 'estado'
+        : level === 'cidade'
+          ? 'cidade'
+          : level === 'distrito'
+            ? 'distrito'
+            : 'bairro'
+    await refreshForView(nextSel, viewAfterDelete)
+  }
+
+  function openCreateChild(parentNode, parentLevel) {
+    const childLevel = CHILD_LEVEL[parentLevel]
+    if (!childLevel) return
+    setNodeModal({ mode: 'create', level: childLevel, parentId: parentNode.id, node: null })
+  }
+
+  function openEditNode(node, level) {
+    setNodeModal({
+      mode: 'edit',
+      level: node.level ?? level,
+      parentId: node.parent_id,
+      node,
+    })
   }
 
   function openCreate() {
@@ -173,90 +239,60 @@ export default function ActivatedLocationsExplorer({
     setNodeModal({ mode: 'create', level, parentId, node: null })
   }
 
-  function layerTitle() {
-    if (activeView === 'cards') {
-      const b = selected.bairro
-      return b ? `QR codes em «${b.name}»` : 'QR codes ativos'
-    }
-    const parentLevel = PARENT_LEVEL[activeView]
-    const parent = parentLevel ? selected[parentLevel] : null
-    if (parent) return `${LOCATION_LEVEL_LABEL[activeView]} em «${parent.name}»`
-    return LOCATION_LEVEL_LABEL[activeView]
-  }
+  function renderLayerPathNav() {
+    const currentDepth = PATH_DEPTH_BY_VIEW[activeView] ?? 0
+    const visible = LAYER_PATH_STEPS.slice(0, currentDepth + 1)
 
-  function renderBreadcrumb() {
     return (
-      <nav className="activated-breadcrumb-nav" aria-label="Localização">
-        <button type="button" className="activated-crumb" onClick={() => goToView('estado')}>
-          Estados
-        </button>
-        {selected.estado && (
-          <>
-            <span className="activated-crumb-sep" aria-hidden>
-              ›
-            </span>
-            <button type="button" className="activated-crumb" onClick={() => goToView('cidade')}>
-              {selected.estado.name}
-            </button>
-          </>
-        )}
-        {selected.cidade && (
-          <>
-            <span className="activated-crumb-sep" aria-hidden>
-              ›
-            </span>
-            <button type="button" className="activated-crumb" onClick={() => goToView('distrito')}>
-              {selected.cidade.name}
-            </button>
-          </>
-        )}
-        {selected.distrito && (
-          <>
-            <span className="activated-crumb-sep" aria-hidden>
-              ›
-            </span>
-            <button type="button" className="activated-crumb" onClick={() => goToView('bairro')}>
-              {selected.distrito.name}
-            </button>
-          </>
-        )}
-        {selected.bairro && (
-          <>
-            <span className="activated-crumb-sep" aria-hidden>
-              ›
-            </span>
-            <button
-              type="button"
-              className={`activated-crumb${activeView === 'cards' ? ' current' : ''}`}
-              onClick={() => goToView('cards')}
-            >
-              {selected.bairro.name}
-            </button>
-          </>
-        )}
+      <nav className="location-layer-path" aria-label="Camadas de localização">
+        {visible.map((step, index) => {
+          const isCurrent = index === currentDepth
+          return (
+            <Fragment key={step.view}>
+              {index > 0 && (
+                <span className="location-layer-path-sep" aria-hidden>
+                  {' '}
+                  &gt;{' '}
+                </span>
+              )}
+              {isCurrent ? (
+                <span className="location-layer-type">{step.label}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="location-layer-path-link"
+                  onPointerDown={(e) => {
+                    if (e.pointerType === 'touch') e.preventDefault()
+                  }}
+                  onClick={() => goToView(step.view)}
+                >
+                  {step.label}
+                </button>
+              )}
+            </Fragment>
+          )
+        })}
       </nav>
     )
   }
 
   const listLevel = activeView === 'cards' ? null : activeView
   const selectedAtLevel = listLevel ? selected[listLevel] : null
-
   return (
     <div className="activated-explorer">
-      {renderBreadcrumb()}
-
       {error && <p className="form-hint error">{error}</p>}
-      {loading && <p className="muted">Carregando…</p>}
 
       <div className="activated-explorer-stage">
-        <div className="location-layer-head">
-          <span className="location-layer-type muted">{layerTitle()}</span>
-          {listLevel && (
-            <button type="button" className="btn secondary small" onClick={openCreate}>
-              + Adicionar
-            </button>
-          )}
-        </div>
+        {(listLevel || activeView === 'cards') && (
+          <div className="location-layer-head">
+            {renderLayerPathNav()}
+            {listLevel && !isFetching && !currentItems.length && (
+              <button type="button" className="btn secondary small" onClick={openCreate}>
+                Adicionar
+              </button>
+            )}
+          </div>
+        )}
 
         {listLevel && (
           <div className="location-card-grid">
@@ -267,62 +303,56 @@ export default function ActivatedLocationsExplorer({
               >
                 <button
                   type="button"
-                  className="location-chip-main"
+                  className="location-chip-main location-chip-main-full"
+                  onPointerDown={(e) => {
+                    if (e.pointerType === 'touch') e.preventDefault()
+                  }}
                   onClick={() => selectNode(listLevel, node)}
                 >
-                  {node.name}
+                  <span className="location-chip-label">{node.name}</span>
                   {(activeCountByNodeId.get(node.id) ?? 0) > 0 ? (
                     <span className="location-chip-count">{activeCountByNodeId.get(node.id)}</span>
                   ) : null}
                 </button>
-                <div className="location-chip-actions">
-                  <button
-                    type="button"
-                    className="btn-icon small"
-                    aria-label="Editar"
-                    onClick={() =>
-                      setNodeModal({ mode: 'edit', level: listLevel, parentId: node.parent_id, node })
-                    }
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-icon small danger-text"
-                    aria-label="Excluir"
-                    onClick={() => handleDeleteNode(listLevel, node)}
-                  >
-                    ×
-                  </button>
-                </div>
+                <ActivatedNodeMenu
+                  label={`Opções: ${node.name}`}
+                  canAdd={Boolean(CHILD_LEVEL[listLevel])}
+                  canDelete={listLevel !== 'bairro'}
+                  onAdd={() => openCreateChild(node, listLevel)}
+                  onEdit={() => openEditNode(node, listLevel)}
+                  onDelete={() => handleDeleteNode(listLevel, node)}
+                />
               </div>
             ))}
-            {!loading && !currentItems.length && (
+            {!isFetching && !currentItems.length && (
               <p className="muted location-empty">
-                Nenhum item nesta camada. Use + Adicionar ou volte e escolha outro caminho.
+                Nenhum item nesta camada. Use o menu ⋮ para adicionar ou excluir a camada vazia.
               </p>
             )}
           </div>
         )}
 
-        {activeView === 'cards' && !loading && (
+        {activeView === 'cards' && (
           <>
-            <button
-              type="button"
-              className="btn secondary small location-back-btn"
-              onClick={() => goToView('bairro')}
-            >
-              ← Voltar aos bairros
-            </button>
-            <CardsTable
-              cards={cards}
-              onSelectCard={onSelectCard}
-              onActivateCard={onActivateCard}
-              onDeactivateCard={onDeactivateCard}
-              onPauseCard={onPauseCard}
-              onAnnotationCard={onAnnotationCard}
-            />
-            {!cards.length && (
+            {!isMobile && (
+              <CardsTable
+                cards={cards}
+                embedAnnotationIcon
+                onSelectCard={onSelectCard}
+                onActivateCard={onActivateCard}
+                onDeactivateCard={onDeactivateCard}
+                onPauseCard={onPauseCard}
+                onAnnotationCard={onAnnotationCard}
+              />
+            )}
+            {isMobile && (
+              <ActivatedCardMobileList
+                cards={cards}
+                onActivateCard={onActivateCard}
+                onAnnotationCard={onAnnotationCard}
+              />
+            )}
+            {!isFetching && !cards.length && (
               <p className="muted location-empty">Nenhum QR ativo neste bairro.</p>
             )}
           </>

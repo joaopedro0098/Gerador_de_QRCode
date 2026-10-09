@@ -41,7 +41,7 @@ export default function CardAnnotationModal({ card, open, onClose, onSaved }) {
         <span className="muted">Texto da anotação</span>
         <textarea
           className="annotation-textarea"
-          rows={6}
+          rows={12}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escreva aqui…"
