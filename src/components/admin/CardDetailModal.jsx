@@ -25,6 +25,8 @@ export default function CardDetailModal({
   onSaved,
   focusActivate = false,
   activateOnly = false,
+  readOnlyActivated = false,
+  stockUi = false,
   onPauseCard,
   onDeactivateCard,
 }) {
@@ -66,6 +68,9 @@ export default function CardDetailModal({
   }, [card?.code, activateOnly, isOpen])
 
   const editingActivatedCard = Boolean(displayCard && isCardActivated(displayCard))
+  const readOnly = readOnlyActivated && !stockUi && !activateOnly
+  const stockActivationUi = stockUi && displayCard && !editingActivatedCard
+  const stockManageUi = stockUi && displayCard && editingActivatedCard
 
   useEffect(() => {
     const bairroId = displayCard?.location_bairro_id
@@ -95,8 +100,7 @@ export default function CardDetailModal({
       ? 'Ativar card'
       : ''
   const headerMeta = activateOnly ? null : formatModalMeta(displayCard)
-  const showActivatedFooterActions =
-    !activateOnly && displayCard && isCardActivated(displayCard)
+  const showStockManageFooter = !activateOnly && stockManageUi
 
   async function handleActivatedSaveClick() {
     const save = activateFormRef.current?.saveActivatedEdit
@@ -134,48 +138,51 @@ export default function CardDetailModal({
         </section>
       )}
 
-      <section className="modal-section modal-section-activate" id="modal-activate-section">
-        <ActivateForm
-          ref={activateFormRef}
-          card={activateOnly ? null : displayCard}
-          standalone={activateOnly}
-          focusLinkOnMount={focusActivate}
-          hideActivateButton={editingActivatedCard}
-          hideBairroField={editingActivatedCard}
-          virginActivationUi={!activateOnly && Boolean(displayCard) && !editingActivatedCard}
-          onSaved={handleSaved}
-        />
-        {showActivatedFooterActions && (
-          <div className="card-detail-footer-actions">
-            <button
-              type="button"
-              className="btn primary"
-              disabled={activatedSaveBusy}
-              onClick={() => void handleActivatedSaveClick()}
-            >
-              {activatedSaveBusy ? 'Salvando…' : 'Salvar'}
-            </button>
-            {onPauseCard && (
+      {!readOnly && (
+        <section className="modal-section modal-section-activate" id="modal-activate-section">
+          <ActivateForm
+            ref={activateFormRef}
+            card={activateOnly ? null : displayCard}
+            standalone={activateOnly}
+            focusLinkOnMount={focusActivate}
+            hideActivateButton={stockManageUi || stockActivationUi}
+            hideBairroField={false}
+            stockActivationUi={stockActivationUi}
+            stockManageUi={stockManageUi}
+            onSaved={handleSaved}
+          />
+          {showStockManageFooter && (
+            <div className="card-detail-footer-actions">
               <button
                 type="button"
-                className="btn secondary"
-                onClick={() => onPauseCard(displayCard)}
+                className="btn primary"
+                disabled={activatedSaveBusy}
+                onClick={() => void handleActivatedSaveClick()}
               >
-                {displayCard.paused ? 'Retomar' : 'Pausar'}
+                {activatedSaveBusy ? 'Salvando…' : 'Salvar'}
               </button>
-            )}
-            {onDeactivateCard && (
-              <button
-                type="button"
-                className="btn secondary danger"
-                onClick={() => onDeactivateCard(displayCard)}
-              >
-                Desativar
-              </button>
-            )}
-          </div>
-        )}
-      </section>
+              {onPauseCard && (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => onPauseCard(displayCard)}
+                >
+                  {displayCard.paused ? 'Retomar' : 'Pausar'}
+                </button>
+              )}
+              {onDeactivateCard && (
+                <button
+                  type="button"
+                  className="btn secondary danger"
+                  onClick={() => onDeactivateCard(displayCard)}
+                >
+                  Desativar
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
     </Modal>
   )
 }

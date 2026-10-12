@@ -3,7 +3,6 @@ import { AuthProvider } from './context/AuthContext.jsx'
 import AdminLayout from './components/admin/AdminLayout.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import RootRedirect from './routes/RootRedirect.jsx'
-import ArtEditorPage from './pages/admin/ArtEditorPage.jsx'
 import CardsListPage from './pages/admin/CardsListPage.jsx'
 import LoginPage from './pages/admin/LoginPage.jsx'
 import RedirectPage from './pages/public/RedirectPage.jsx'
@@ -21,8 +20,8 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<CardsListPage />} />
-              <Route path="arte" element={<ArtEditorPage />} />
               <Route path="lote" element={<Navigate to="/admin?gerar=1" replace />} />
+              <Route path="arte" element={<Navigate to="/admin" replace />} />
               <Route path="ativar/*" element={<Navigate to="/admin" replace />} />
             </Route>
           </Route>

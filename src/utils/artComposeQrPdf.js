@@ -1,6 +1,9 @@
 import { PDFDocument } from 'pdf-lib'
-import { cmToPt } from './artUnits.js'
 import { qrPngBytesForCode } from './artQrRaster.js'
+
+function cmToPt(cm) {
+  return (Number(cm) * 72) / 2.54
+}
 
 /** PDF quadrado só com o QR code (~300 DPI). */
 export async function composeQrOnlyPdf(code, qrSizeCm) {

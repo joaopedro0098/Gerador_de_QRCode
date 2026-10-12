@@ -1,11 +1,4 @@
-import AnnotationLeafButton from './AnnotationLeafButton.jsx'
-
-function establishmentLabel(card) {
-  const name = card?.notes?.trim()
-  return name || 'Sem estabelecimento'
-}
-
-export default function ActivatedCardMobileList({ cards, onOpenCard, onAnnotationCard }) {
+export default function ActivatedCardMobileList({ cards, onOpenCard }) {
   if (!cards.length) {
     return null
   }
@@ -14,18 +7,13 @@ export default function ActivatedCardMobileList({ cards, onOpenCard, onAnnotatio
     <ul className="activated-mobile-card-list">
       {cards.map((card) => (
         <li key={card.id}>
-          <div className="activated-mobile-card-item">
-            <button
-              type="button"
-              className="activated-mobile-card-main"
-              onClick={() => onOpenCard?.(card)}
-            >
-              <span className="activated-mobile-card-name">{establishmentLabel(card)}</span>
-            </button>
-            {onAnnotationCard && (
-              <AnnotationLeafButton card={card} onClick={onAnnotationCard} />
-            )}
-          </div>
+          <button
+            type="button"
+            className="activated-mobile-card-main activated-mobile-card-main--code"
+            onClick={() => onOpenCard?.(card)}
+          >
+            <span className="activated-mobile-card-name">{card.code}</span>
+          </button>
         </li>
       ))}
     </ul>

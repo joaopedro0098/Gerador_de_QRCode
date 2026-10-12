@@ -26,7 +26,8 @@ const ActivateForm = forwardRef(function ActivateForm(
     focusLinkOnMount = false,
     hideActivateButton = false,
     hideBairroField = false,
-    virginActivationUi = false,
+    stockActivationUi = false,
+    stockManageUi = false,
     onSaved,
   },
   ref,
@@ -228,7 +229,9 @@ const ActivateForm = forwardRef(function ActivateForm(
     closeBairroConfirm(false)
   }
 
-  const activatedEditUi = hideBairroField && hideActivateButton && !virginActivationUi && !standalone
+  const activatedEditUi =
+    hideBairroField && hideActivateButton && !stockActivationUi && !stockManageUi && !standalone
+  const unifiedFieldUi = stockActivationUi || stockManageUi || activatedEditUi
 
   const handleActivatedEditSave = async () => {
     setError(null)
@@ -351,6 +354,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       locationBairroId,
       wasActivated,
       existingBairroId: existing.location_bairro_id,
+      storedStockAt: existing.stock_at,
     })
 
     setBusy(null)
@@ -413,7 +417,7 @@ const ActivateForm = forwardRef(function ActivateForm(
     }
 
     const wasActivated = isCardActivated(existing)
-    const nfcDraftOnly = virginActivationUi && !wasActivated
+    const nfcDraftOnly = stockActivationUi && !wasActivated
 
     if (nfcDraftOnly && !validateVirginBairroAndEstablishment()) {
       nfcWriteSession.abort()
@@ -578,11 +582,11 @@ const ActivateForm = forwardRef(function ActivateForm(
     return busy === forField
   }
 
-  const showStandaloneAtivarSubmit = !hideActivateButton && !virginActivationUi
+  const showStandaloneAtivarSubmit = !hideActivateButton && !stockActivationUi
 
   function handleFormSubmit(e) {
     e.preventDefault()
-    if (virginActivationUi) {
+    if (stockActivationUi) {
       void handleVirginAtivar()
       return
     }
@@ -625,7 +629,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       {!loadingCard && existing && (
         <label>
           Estabelecimento
-          {virginActivationUi || activatedEditUi ? (
+          {unifiedFieldUi ? (
             <input
               type="text"
               value={notes}
@@ -659,7 +663,7 @@ const ActivateForm = forwardRef(function ActivateForm(
 
       <label>
         QR Code
-        {virginActivationUi || activatedEditUi ? (
+        {unifiedFieldUi ? (
           <input
             ref={linkInputRef}
             type="text"
@@ -732,7 +736,7 @@ const ActivateForm = forwardRef(function ActivateForm(
         <p className={`form-hint success${successTone === 'nfc' ? ' success-nfc' : ''}`}>{message}</p>
       )}
 
-      {virginActivationUi && !loadingCard && existing && (
+      {stockActivationUi && !loadingCard && existing && (
         <button type="submit" className="btn primary activate-virgin-save-btn" disabled={formLocked}>
           {busy === 'virgin-activate' ? 'Ativando…' : 'Ativar'}
         </button>

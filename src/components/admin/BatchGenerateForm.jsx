@@ -1,7 +1,12 @@
-import { useState } from 'react'
-import { BATCH_INSERT_CHUNK, BATCH_MAX } from '../../lib/config.js'
+import { useCallback, useEffect, useState } from 'react'
+import { BATCH_INSERT_CHUNK, BATCH_MAX, VIRGIN_POOL_MAX } from '../../lib/config.js'
 import { supabase } from '../../lib/supabase.js'
 import { nextSequentialLojaCodes } from '../../utils/codes.js'
+import {
+  fetchVirginPoolCount,
+  virginSlotsAvailable,
+} from '../../utils/virginPool.js'
+import BatchGenerateLimitModal from './BatchGenerateLimitModal.jsx'
 
 function chunkArray(arr, size) {
   const chunks = []
@@ -11,24 +16,31 @@ function chunkArray(arr, size) {
   return chunks
 }
 
-export default function BatchGenerateForm() {
+export default function BatchGenerateForm({ active = true, onGenerated }) {
   const [quantity, setQuantity] = useState(50)
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const [virginCount, setVirginCount] = useState(null)
+  const [limitModal, setLimitModal] = useState(null)
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError(null)
-    setResult(null)
-
-    const n = Number(quantity)
-    if (!Number.isInteger(n) || n < 1 || n > BATCH_MAX) {
-      setError(`Informe uma quantidade entre 1 e ${BATCH_MAX}.`)
-      return
+  const refreshVirginCount = useCallback(async () => {
+    const { count, error: countError } = await fetchVirginPoolCount(supabase)
+    if (!countError) {
+      setVirginCount(count)
     }
+  }, [])
 
+  useEffect(() => {
+    if (!active) return
+    void refreshVirginCount()
+  }, [active, refreshVirginCount])
+
+  const slotsAvailable =
+    virginCount != null ? virginSlotsAvailable(virginCount) : null
+
+  async function runGenerate(n) {
     setLoading(true)
     setProgress('Reservando IDs sequenciais…')
 
@@ -54,6 +66,8 @@ export default function BatchGenerateForm() {
       }
 
       setResult(`${codes.length} QR codes virgens criados.`)
+      await refreshVirginCount()
+      onGenerated?.()
     } catch (err) {
       setError(err.message ?? 'Erro ao gerar.')
     } finally {
@@ -62,31 +76,92 @@ export default function BatchGenerateForm() {
     }
   }
 
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError(null)
+    setResult(null)
+
+    const n = Number(quantity)
+    if (!Number.isInteger(n) || n < 1 || n > BATCH_MAX) {
+      setError(`Informe uma quantidade entre 1 e ${BATCH_MAX}.`)
+      return
+    }
+
+    const { count, error: countError } = await fetchVirginPoolCount(supabase)
+    if (countError) {
+      setError(countError.message)
+      return
+    }
+    setVirginCount(count)
+
+    const available = virginSlotsAvailable(count)
+    if (available <= 0) {
+      setLimitModal({ mode: 'full' })
+      return
+    }
+    if (n > available) {
+      setLimitModal({ mode: 'partial', requested: n, available })
+      return
+    }
+
+    await runGenerate(n)
+  }
+
+  async function confirmPartialGenerate() {
+    if (!limitModal || limitModal.mode !== 'partial') return
+    const n = limitModal.available
+    setLimitModal(null)
+    await runGenerate(n)
+  }
+
+  function closeLimitModal() {
+    if (loading) return
+    setLimitModal(null)
+  }
+
   return (
-    <form className="stack-form" onSubmit={handleSubmit}>
-      <label>
-        Quantidade (máx. {BATCH_MAX})
-        <input
-          type="number"
-          min={1}
-          max={BATCH_MAX}
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-        />
-      </label>
+    <>
+      <form className="stack-form" onSubmit={handleSubmit}>
+        <label>
+          Quantidade (máx. {BATCH_MAX})
+          <input
+            type="number"
+            min={1}
+            max={BATCH_MAX}
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            disabled={loading}
+          />
+        </label>
 
-      <p className="form-hint muted">
-        IDs sequenciais: loja1, loja2, loja3… (até 15 caracteres). Apenas cria cards virgens no
-        sistema.
-      </p>
+        <p className="form-hint muted">
+          IDs sequenciais: loja1, loja2, loja3… (até 15 caracteres). Limite de {VIRGIN_POOL_MAX}{' '}
+          virgens na lista.
+          {slotsAvailable != null && (
+            <>
+              {' '}
+              Disponível agora: {slotsAvailable}.
+            </>
+          )}
+        </p>
 
-      {progress && <p className="form-hint">{progress}</p>}
-      {error && <p className="form-hint error">{error}</p>}
-      {result && <p className="form-hint success">{result}</p>}
+        {progress && <p className="form-hint">{progress}</p>}
+        {error && <p className="form-hint error">{error}</p>}
+        {result && <p className="form-hint success">{result}</p>}
 
-      <button type="submit" className="btn primary" disabled={loading}>
-        {loading ? 'Processando…' : 'Gerar'}
-      </button>
-    </form>
+        <button type="submit" className="btn primary" disabled={loading}>
+          {loading ? 'Processando…' : 'Gerar'}
+        </button>
+      </form>
+
+      <BatchGenerateLimitModal
+        open={Boolean(limitModal)}
+        mode={limitModal?.mode ?? null}
+        available={limitModal?.available ?? 0}
+        busy={loading}
+        onClose={closeLimitModal}
+        onConfirmPartial={() => void confirmPartialGenerate()}
+      />
+    </>
   )
 }

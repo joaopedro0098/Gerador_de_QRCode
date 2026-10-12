@@ -1,8 +1,8 @@
 import { memo } from 'react'
-import { Link } from 'react-router-dom'
 
 const STATUS_FILTERS = [
   { value: 'virgin', label: 'Virgens' },
+  { value: 'stock', label: 'Estoque' },
   { value: 'activated', label: 'Ativados' },
 ]
 
@@ -16,6 +16,8 @@ function CardsListStatusToolbar({
   showActivatedExplorer,
 }) {
   const isActivated = filter === 'activated'
+  const isStock = filter === 'stock'
+  const searchEnabled = isActivated || isStock
 
   return (
     <div className="toolbar toolbar-home toolbar-codes-top" data-filter={filter}>
@@ -34,16 +36,20 @@ function CardsListStatusToolbar({
         ))}
       </div>
 
-      <div className="toolbar-codes-search" data-active={isActivated ? 'true' : 'false'}>
+      <div className="toolbar-codes-search" data-active={searchEnabled ? 'true' : 'false'}>
         <input
           type="search"
           className="toolbar-search"
-          placeholder="Buscar ID, estabelecimento, cidade, distrito ou bairro…"
+          placeholder={
+            isStock
+              ? 'Buscar ID ou estabelecimento…'
+              : 'Buscar ID, estabelecimento, cidade, distrito ou bairro…'
+          }
           value={searchInput}
           onChange={(e) => onSearchInputChange(e.target.value)}
           aria-label="Buscar"
-          tabIndex={isActivated ? 0 : -1}
-          aria-hidden={!isActivated}
+          tabIndex={searchEnabled ? 0 : -1}
+          aria-hidden={!searchEnabled}
         />
       </div>
 
@@ -57,15 +63,12 @@ function CardsListStatusToolbar({
         </div>
         <div
           className={`toolbar-codes-trailing-slot toolbar-codes-trailing-slot--virgin${
-            !isActivated ? '' : ' toolbar-codes-trailing-slot--inactive'
+            filter === 'virgin' ? '' : ' toolbar-codes-trailing-slot--inactive'
           }`}
         >
           <button type="button" className="btn secondary small" onClick={onGerarClick}>
             Gerar mais
           </button>
-          <Link to="/admin/arte" className="btn secondary small">
-            Upload
-          </Link>
         </div>
       </div>
     </div>

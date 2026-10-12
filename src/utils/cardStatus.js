@@ -4,9 +4,25 @@ export function isCardActivated(card) {
   return Boolean(card.activated_at)
 }
 
-/** Filtros Supabase (virgem = ainda não ativado). */
+/** Virgem = gerado, ainda não foi para o estoque. */
+export function isCardVirgin(card) {
+  if (!card) return false
+  return !card.activated_at && !card.stock_at
+}
+
+/** Estoque = configurável / desativado (stock_at preenchido). */
+export function isCardInStock(card) {
+  if (!card) return false
+  return Boolean(card.stock_at)
+}
+
+/** Filtros Supabase. */
 export function applyVirginCardsFilter(query) {
-  return query.is('activated_at', null)
+  return query.is('activated_at', null).is('stock_at', null)
+}
+
+export function applyStockCardsFilter(query) {
+  return query.not('stock_at', 'is', null)
 }
 
 export function applyActivatedCardsFilter(query) {

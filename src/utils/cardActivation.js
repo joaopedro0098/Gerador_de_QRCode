@@ -4,11 +4,11 @@ import { ensureShortLinkForCard } from './shortLinks.js'
 import { isValidHttpsUrl } from './validate.js'
 
 export const CARD_FIELDS =
-  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, short_code, created_at, location_bairro_id, paused, annotation'
+  'id, code, destination_url, activated_at, stock_at, notes, nfc_url, nfc_uid, short_code, created_at, location_bairro_id, paused, annotation'
 
 /** Lista Virgens — sem created_at (não exibido na UI). */
 export const CARD_VIRGIN_LIST_FIELDS =
-  'id, code, destination_url, activated_at, notes, nfc_url, nfc_uid, short_code, location_bairro_id, paused, annotation'
+  'id, code, destination_url, activated_at, stock_at, notes, nfc_url, nfc_uid, short_code, location_bairro_id, paused, annotation'
 
 export { isCardActivated }
 
@@ -74,8 +74,16 @@ export async function activateVirginCard(
     locationBairroId,
     wasActivated,
     existingBairroId,
+    storedStockAt = null,
   },
 ) {
+  if (!wasActivated && !storedStockAt) {
+    return {
+      data: null,
+      error: { message: 'Envie este ID para o estoque antes de ativar.' },
+    }
+  }
+
   const qr = destinationUrl.trim()
   const nfcFromForm = nfcUrl.trim()
   const nfcStored = storedNfcUrl.trim()

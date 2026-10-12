@@ -15,8 +15,7 @@ export default function DeactivateCardConfirmModal({
       animated
     >
       <p className="form-hint">
-        QR, NFC, estabelecimento, bairro e anotações serão limpos e o card voltará para Virgens.
-        Deseja continuar?
+        O card deixa de redirecionar e volta para o Estoque (configurações mantidas). Deseja continuar?
       </p>
       <div className="art-download-quality-actions">
         <button type="button" className="btn secondary" onClick={onCancel} disabled={busy}>

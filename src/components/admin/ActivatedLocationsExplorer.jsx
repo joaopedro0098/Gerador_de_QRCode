@@ -53,7 +53,7 @@ const PATH_DEPTH_BY_VIEW = {
 }
 
 const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplorer(
-  { onOpenCard, onAnnotationCard, refreshKey = 0 },
+  { onOpenCard, refreshKey = 0 },
   ref,
 ) {
   const [activeView, setActiveView] = useState('estado')
@@ -100,11 +100,6 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
       setIsFetching(true)
       setActiveView(view)
       activeViewRef.current = view
-
-      setCurrentItems([])
-      if (view !== 'cards') {
-        setCards([])
-      }
 
       try {
         if (view === 'cards') {
@@ -273,7 +268,10 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
     <div className="activated-explorer">
       {error && <p className="form-hint error">{error}</p>}
 
-      <div className="activated-explorer-stage">
+      <div
+        className={`activated-explorer-stage${isFetching ? ' activated-explorer-stage--busy' : ''}`}
+        aria-busy={isFetching ? 'true' : 'false'}
+      >
         {(listLevel || activeView === 'cards') && (
           <div className="location-layer-head">{renderLayerPathNav()}</div>
         )}
