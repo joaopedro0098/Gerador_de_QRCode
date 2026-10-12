@@ -578,6 +578,7 @@ export default function CardsListPage() {
             ref={activatedExplorerRef}
             refreshKey={explorerRefreshKey}
             onOpenCard={(card) => openCardModal(card, false)}
+            onAnnotationCard={setAnnotationCard}
           />
         )}
 

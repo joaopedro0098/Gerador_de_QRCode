@@ -1236,6 +1236,21 @@ input:focus {
   margin: 0;
 }
 
+.location-layer-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 14rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.location-layer-empty-state .muted {
+  margin: 0 0 0.25rem;
+}
+
 .location-next-btn {
   margin-top: 0.65rem;
 }

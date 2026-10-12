@@ -52,8 +52,26 @@ const PATH_DEPTH_BY_VIEW = {
   cards: 3,
 }
 
+const EMPTY_CHILD_LAYER = {
+  cidade: {
+    message: 'Não há cidades cadastradas.',
+    addLabel: 'Adicionar cidade',
+    cancelView: 'estado',
+  },
+  distrito: {
+    message: 'Não há distritos cadastrados.',
+    addLabel: 'Adicionar distrito',
+    cancelView: 'cidade',
+  },
+  bairro: {
+    message: 'Não há bairros cadastrados.',
+    addLabel: 'Adicionar bairro',
+    cancelView: 'distrito',
+  },
+}
+
 const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplorer(
-  { onOpenCard, refreshKey = 0 },
+  { onOpenCard, onAnnotationCard, refreshKey = 0 },
   ref,
 ) {
   const [activeView, setActiveView] = useState('estado')
@@ -225,6 +243,16 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
 
   useImperativeHandle(ref, () => ({ openCreate }), [openCreate])
 
+  function openCreateAtCurrentLevel() {
+    openCreate()
+  }
+
+  function cancelEmptyChildLayer() {
+    const view = activeViewRef.current
+    const copy = view && view !== 'cards' ? EMPTY_CHILD_LAYER[view] : null
+    if (copy?.cancelView) goToView(copy.cancelView)
+  }
+
   function renderLayerPathNav() {
     const currentDepth = PATH_DEPTH_BY_VIEW[activeView] ?? 0
     const visible = LAYER_PATH_STEPS.slice(0, currentDepth + 1)
@@ -276,7 +304,19 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
           <div className="location-layer-head">{renderLayerPathNav()}</div>
         )}
 
-        {listLevel && (
+        {listLevel && !isFetching && !currentItems.length && EMPTY_CHILD_LAYER[listLevel] ? (
+          <div className="location-layer-empty-state">
+            <p className="muted">{EMPTY_CHILD_LAYER[listLevel].message}</p>
+            <button type="button" className="btn secondary small" onClick={openCreateAtCurrentLevel}>
+              {EMPTY_CHILD_LAYER[listLevel].addLabel}
+            </button>
+            <button type="button" className="btn secondary small" onClick={cancelEmptyChildLayer}>
+              Cancelar
+            </button>
+          </div>
+        ) : null}
+
+        {listLevel && (isFetching || currentItems.length > 0) && (
           <div className="location-card-grid">
             {currentItems.map((node) => (
               <div
@@ -304,12 +344,13 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
                 />
               </div>
             ))}
-            {!isFetching && !currentItems.length && (
-              <p className="muted location-empty">
-                Nenhum item nesta camada. Use Adicionar no topo ou o menu ⋮ para excluir a camada vazia.
-              </p>
-            )}
           </div>
+        )}
+
+        {listLevel === 'estado' && !isFetching && !currentItems.length && (
+          <p className="muted location-empty location-layer-empty-state">
+            Nenhum estado cadastrado. Use Adicionar no topo.
+          </p>
         )}
 
         {activeView === 'cards' && (
