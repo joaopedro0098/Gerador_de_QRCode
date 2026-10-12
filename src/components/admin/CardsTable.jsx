@@ -2,11 +2,6 @@ import { memo } from 'react'
 import { isCardActivated } from '../../utils/cardStatus.js'
 import AnnotationLeafButton from './AnnotationLeafButton.jsx'
 
-function formatDateOnly(value) {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString('pt-BR')
-}
-
 function formatDateTime(value) {
   if (!value) return '—'
   return new Date(value).toLocaleString('pt-BR')
@@ -35,25 +30,26 @@ function CardsTable({
 
   const showActionsColumn = !hideRowActions && !activatedMinimalLayout && !virginLayout
   const showAnnotationColumn =
-    !embedAnnotationIcon && !virginLayout && !activatedMinimalLayout && (stockLayout || !hideRowActions)
-  const showStatusColumn = stockLayout
-  const showCreatedAtColumn = stockLayout
+    !embedAnnotationIcon &&
+    !virginLayout &&
+    !activatedMinimalLayout &&
+    !stockLayout &&
+    !hideRowActions
   const showEstablishmentColumn = stockLayout || (!virginLayout && !activatedMinimalLayout)
   const showActivatedAtColumn = stockLayout
 
   const pickSet = stockPickSelectedIds instanceof Set ? stockPickSelectedIds : null
 
-  const tableColumnCount =
-    1 +
-    (stockPickMode ? 1 : 0) +
-    (showAnnotationColumn ? 1 : 0) +
-    (showStatusColumn ? 1 : 0) +
-    (showEstablishmentColumn ? 1 : 0) +
-    (showLocationColumn ? 1 : 0) +
-    (showCreatedAtColumn ? 1 : 0) +
-    (showActivatedAtColumn ? 1 : 0) +
-    (embedAnnotationIcon ? 1 : 0) +
-    (showActionsColumn ? 1 : 0)
+  const tableColumnCount = stockLayout
+    ? 3
+    : 1 +
+      (stockPickMode ? 1 : 0) +
+      (showAnnotationColumn ? 1 : 0) +
+      (showEstablishmentColumn ? 1 : 0) +
+      (showLocationColumn ? 1 : 0) +
+      (showActivatedAtColumn ? 1 : 0) +
+      (embedAnnotationIcon ? 1 : 0) +
+      (showActionsColumn ? 1 : 0)
 
   return (
     <div className="table-wrap">
@@ -61,13 +57,21 @@ function CardsTable({
         <thead>
           <tr>
             {stockPickMode && <th className="cell-pick" aria-label="Selecionar" />}
-            {showAnnotationColumn && <th aria-label="Anotações" />}
-            <th>ID</th>
-            {showStatusColumn && <th>Status</th>}
-            {showEstablishmentColumn && <th>Estabelecimento</th>}
-            {showLocationColumn && <th>Local</th>}
-            {showCreatedAtColumn && <th>Criado em</th>}
-            {showActivatedAtColumn && <th>Ativado em</th>}
+            {stockLayout ? (
+              <>
+                <th>ID</th>
+                <th>Estabelecimento</th>
+                <th>Ativado em</th>
+              </>
+            ) : (
+              <>
+                {showAnnotationColumn && <th aria-label="Anotações" />}
+                <th>ID</th>
+                {showEstablishmentColumn && <th>Estabelecimento</th>}
+                {showLocationColumn && <th>Local</th>}
+                {showActivatedAtColumn && <th>Ativado em</th>}
+              </>
+            )}
             {embedAnnotationIcon && <th className="cell-trailing-icon" aria-label="Anotações" />}
             {showActionsColumn && <th aria-hidden />}
           </tr>
@@ -104,47 +108,53 @@ function CardsTable({
 
             return (
               <tr key={card.id} className={card.paused ? 'row-paused' : undefined}>
-                {showAnnotationColumn && (
-                  <td className="cell-icon">
-                    {stockLayout || activated ? (
-                      <AnnotationLeafButton
-                        card={card}
-                        onClick={onAnnotationCard}
-                        className="annotation-btn"
-                      />
-                    ) : null}
-                  </td>
+                {stockLayout ? (
+                  <>
+                    <td>
+                      <button type="button" className="link-button" onClick={() => onSelectCard(card)}>
+                        {card.code}
+                      </button>
+                    </td>
+                    <td className="cell-notes">{card.notes || '—'}</td>
+                    <td>{formatDateTime(card.activated_at)}</td>
+                  </>
+                ) : (
+                  <>
+                    {showAnnotationColumn && (
+                      <td className="cell-icon">
+                        {activated ? (
+                          <AnnotationLeafButton
+                            card={card}
+                            onClick={onAnnotationCard}
+                            className="annotation-btn"
+                          />
+                        ) : null}
+                      </td>
+                    )}
+                    <td className={virginLayout ? 'virgin-id-row-cell' : undefined}>
+                      {virginLayout ? (
+                        <button
+                          type="button"
+                          className="virgin-id-row-btn"
+                          onClick={() => onSelectCard(card)}
+                        >
+                          <span className="virgin-id-row-label">{card.code}</span>
+                        </button>
+                      ) : (
+                        <button type="button" className="link-button" onClick={() => onSelectCard(card)}>
+                          {card.code}
+                        </button>
+                      )}
+                    </td>
+                    {showEstablishmentColumn && (
+                      <td className="cell-notes">{card.notes || '—'}</td>
+                    )}
+                    {showLocationColumn && (
+                      <td className="cell-notes">{card.location_path || '—'}</td>
+                    )}
+                    {showActivatedAtColumn && <td>{formatDateTime(card.activated_at)}</td>}
+                  </>
                 )}
-                <td className={virginLayout ? 'virgin-id-row-cell' : undefined}>
-                  {virginLayout ? (
-                    <button
-                      type="button"
-                      className="virgin-id-row-btn"
-                      onClick={() => onSelectCard(card)}
-                    >
-                      <span className="virgin-id-row-label">{card.code}</span>
-                    </button>
-                  ) : (
-                    <button type="button" className="link-button" onClick={() => onSelectCard(card)}>
-                      {card.code}
-                    </button>
-                  )}
-                </td>
-                {showStatusColumn && (
-                  <td>
-                    <span className={`badge ${activated ? 'badge-ok' : 'badge-muted'}`}>
-                      {activated ? (card.paused ? 'Pausado' : 'Ativado') : 'No estoque'}
-                    </span>
-                  </td>
-                )}
-                {showEstablishmentColumn && (
-                  <td className="cell-notes">{card.notes || '—'}</td>
-                )}
-                {showLocationColumn && (
-                  <td className="cell-notes">{card.location_path || '—'}</td>
-                )}
-                {showCreatedAtColumn && <td>{formatDateOnly(card.created_at)}</td>}
-                {showActivatedAtColumn && <td>{formatDateTime(card.activated_at)}</td>}
                 {embedAnnotationIcon && (
                   <td className="cell-trailing-icon">
                     {activated ? (

@@ -34,6 +34,15 @@ function CardsListStatusToolbar({
             {f.label}
           </button>
         ))}
+        {filter === 'virgin' && (
+          <button
+            type="button"
+            className="btn secondary small toolbar-codes-gerar-mais"
+            onClick={onGerarClick}
+          >
+            Gerar mais
+          </button>
+        )}
       </div>
 
       <div className="toolbar-codes-search" data-active={searchEnabled ? 'true' : 'false'}>
@@ -59,15 +68,6 @@ function CardsListStatusToolbar({
         >
           <button type="button" className="btn secondary small toolbar-codes-tab" onClick={onAdicionarClick}>
             Adicionar
-          </button>
-        </div>
-        <div
-          className={`toolbar-codes-trailing-slot toolbar-codes-trailing-slot--virgin${
-            filter === 'virgin' ? '' : ' toolbar-codes-trailing-slot--inactive'
-          }`}
-        >
-          <button type="button" className="btn secondary small" onClick={onGerarClick}>
-            Gerar mais
           </button>
         </div>
       </div>

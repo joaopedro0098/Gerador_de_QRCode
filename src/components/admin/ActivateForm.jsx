@@ -605,7 +605,7 @@ const ActivateForm = forwardRef(function ActivateForm(
             value={code}
             onChange={(e) => setCode(normalizeCode(e.target.value))}
             onKeyDown={blockEmptyBackspaceNav}
-            placeholder="ex: loja1"
+            placeholder="ex: loja01"
             maxLength={15}
             autoComplete="off"
           />

@@ -252,15 +252,29 @@ p {
   margin: 0.5rem 0;
 }
 
-.virgin-cards-count {
+.virgin-list-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin: 0.5rem 0 0.85rem;
+}
+
+.virgin-list-meta-row-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.virgin-cards-count {
+  margin: 0;
   font-size: 0.875rem;
 }
 
 .virgin-stock-toolbar {
   display: flex;
   justify-content: flex-end;
-  margin: 0 0 0.35rem;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .virgin-stock-toolbar-active {
@@ -550,6 +564,14 @@ input:focus {
 .btn.secondary.active {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.btn.secondary.toolbar-codes-gerar-mais {
+  background: rgba(147, 197, 253, 0.38);
+}
+
+.btn.secondary.toolbar-codes-gerar-mais:hover:not(:disabled) {
+  background: rgba(147, 197, 253, 0.38);
 }
 
 .btn.secondary.danger {

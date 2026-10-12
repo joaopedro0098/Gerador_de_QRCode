@@ -18,7 +18,8 @@ export function formatLojaCode(number) {
   if (!Number.isInteger(n) || n < 1) {
     throw new Error('Número de loja inválido.')
   }
-  const code = `${CODE_PREFIX}${n}`
+  const suffix = n <= 9 ? `0${n}` : String(n)
+  const code = `${CODE_PREFIX}${suffix}`
   if (code.length > CODE_MAX_LENGTH) {
     throw new Error(`O ID "${code}" excede ${CODE_MAX_LENGTH} caracteres.`)
   }

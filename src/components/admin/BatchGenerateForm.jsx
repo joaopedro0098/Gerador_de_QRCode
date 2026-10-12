@@ -135,7 +135,8 @@ export default function BatchGenerateForm({ active = true, onGenerated }) {
         </label>
 
         <p className="form-hint muted">
-          IDs sequenciais: loja1, loja2, loja3… (até 15 caracteres). Limite de {VIRGIN_POOL_MAX}{' '}
+          IDs sequenciais: loja01, loja02… loja09, loja10… (até 15 caracteres). Limite de{' '}
+          {VIRGIN_POOL_MAX}{' '}
           virgens na lista.
           {slotsAvailable != null && (
             <>

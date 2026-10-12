@@ -25,11 +25,19 @@ function PaginatedCardsListPanel({
     .filter(Boolean)
     .join(' ')
 
+  const showListMeta = virginToolbar != null || listCount != null
+
   return (
     <>
-      {virginToolbar}
-      {listCount != null && (
-        <p className="muted virgin-cards-count">{listCount}</p>
+      {showListMeta && (
+        <div className="virgin-list-meta-row">
+          {listCount != null ? (
+            <p className="muted virgin-cards-count">{listCount}</p>
+          ) : (
+            <span className="virgin-list-meta-row-spacer" aria-hidden="true" />
+          )}
+          {virginToolbar}
+        </div>
       )}
 
       {error && <p className="form-hint error">{error}</p>}
