@@ -8,19 +8,38 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
+    let settled = false
+    const finish = (nextSession) => {
+      if (settled) return
+      settled = true
+      setSession(nextSession)
       setLoading(false)
-    })
+    }
+
+    const watchdog = window.setTimeout(() => finish(null), 8000)
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        window.clearTimeout(watchdog)
+        finish(data.session)
+      })
+      .catch(() => {
+        window.clearTimeout(watchdog)
+        finish(null)
+      })
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setLoading(false)
+      window.clearTimeout(watchdog)
+      finish(nextSession)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      window.clearTimeout(watchdog)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const value = useMemo(

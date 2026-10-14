@@ -1,11 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
-function homeUrl(req) {
+function publicBaseUrl(req) {
   const base = process.env.VITE_SHORT_BASE_URL?.trim()?.replace(/\/+$/, '')
-  if (base) return `${base}/`
+  if (base) return base
   const host = req.headers['x-forwarded-host'] || req.headers.host
   const proto = req.headers['x-forwarded-proto'] || 'https'
-  return host ? `${proto}://${host}/` : '/'
+  return host ? `${proto}://${host}` : ''
+}
+
+function linkUnavailableUrl(req) {
+  const base = publicBaseUrl(req)
+  return base ? `${base}/link-indisponivel` : '/link-indisponivel'
 }
 
 function supabaseEnv() {
@@ -56,14 +61,14 @@ export default async function handler(req, res) {
 
   const code = String(req.query.code ?? '').trim()
   if (!code) {
-    res.writeHead(302, { Location: homeUrl(req) })
+    res.writeHead(302, { Location: linkUnavailableUrl(req), 'Cache-Control': 'no-store' })
     res.end()
     return
   }
 
   const env = supabaseEnv()
   if (!env) {
-    res.writeHead(302, { Location: homeUrl(req) })
+    res.writeHead(302, { Location: linkUnavailableUrl(req), 'Cache-Control': 'no-store' })
     res.end()
     return
   }
@@ -76,7 +81,7 @@ export default async function handler(req, res) {
 
   if (!targetUrl) {
     res.writeHead(302, {
-      Location: homeUrl(req),
+      Location: linkUnavailableUrl(req),
       'Cache-Control': 'no-store',
     })
     res.end()

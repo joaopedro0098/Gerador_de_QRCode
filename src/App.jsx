@@ -6,6 +6,7 @@ import RootRedirect from './routes/RootRedirect.jsx'
 import CardsListPage from './pages/admin/CardsListPage.jsx'
 import LoginPage from './pages/admin/LoginPage.jsx'
 import RedirectPage from './pages/public/RedirectPage.jsx'
+import LinkUnavailablePage from './pages/public/LinkUnavailablePage.jsx'
 import ShortRedirectPage from './pages/public/ShortRedirectPage.jsx'
 
 export default function App() {
@@ -16,6 +17,8 @@ export default function App() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/c/:codigo" element={<RedirectPage />} />
           <Route path="/r/:code" element={<ShortRedirectPage />} />
+          <Route path="/api/redirect/:code" element={<ShortRedirectPage />} />
+          <Route path="/link-indisponivel" element={<LinkUnavailablePage />} />
           <Route path="/admin/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/admin" element={<AdminLayout />}>

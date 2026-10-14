@@ -53,16 +53,16 @@ export function shortRedirectDevPlugin(mode) {
         const code = extractShortCode(req.url?.split('?')[0] ?? '')
         if (!code) return next()
 
-        const home = '/'
+        const fallback = '/link-indisponivel'
         try {
           const target = await resolveTargetUrl(env, code)
           if (req.method === 'HEAD') {
-            sendRedirect(res, target || home)
+            sendRedirect(res, target || fallback)
             return
           }
-          sendRedirect(res, target || home)
+          sendRedirect(res, target || fallback)
         } catch {
-          sendRedirect(res, home)
+          sendRedirect(res, fallback)
         }
       })
     },
