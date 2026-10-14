@@ -50,6 +50,16 @@ const ActivateForm = forwardRef(function ActivateForm(
   const [bairroConfirmBusy, setBairroConfirmBusy] = useState(false)
   const bairroConfirmResolverRef = useRef(null)
   const pendingBairroIdRef = useRef(null)
+  const nfcWriteSessionRef = useRef(null)
+  const nfcOpRef = useRef(0)
+
+  function abortActiveNfcWrite() {
+    nfcOpRef.current += 1
+    nfcWriteSessionRef.current?.abort()
+    nfcWriteSessionRef.current = null
+  }
+
+  useEffect(() => () => abortActiveNfcWrite(), [])
 
   useEffect(() => {
     if (standalone) return
@@ -403,16 +413,20 @@ const ActivateForm = forwardRef(function ActivateForm(
       existing.short_code,
     )
 
+    abortActiveNfcWrite()
+    const opId = nfcOpRef.current
+
     let nfcWriteSession = null
     try {
       nfcWriteSession = createNfcWriteSession(shortUrlPromise)
+      nfcWriteSessionRef.current = nfcWriteSession
     } catch {
       setNfcHint('Use Chrome no Android para gravar NFC.')
       return
     }
 
     if (!(await ensureBairroChangeBeforeSave())) {
-      nfcWriteSession.abort()
+      abortActiveNfcWrite()
       return
     }
 
@@ -420,45 +434,59 @@ const ActivateForm = forwardRef(function ActivateForm(
     const nfcDraftOnly = stockActivationUi && !wasActivated
 
     if (nfcDraftOnly && !validateVirginBairroAndEstablishment()) {
-      nfcWriteSession.abort()
+      abortActiveNfcWrite()
       return
     }
 
+    setNfcHint(
+      'Encoste a tag no celular e mantenha parada até concluir. Se já houver link na tag, ele será substituído.',
+    )
     setBusy('nfc')
 
-    const result = await activateNfc(supabase, existing.id, nfcUrl, {
-      locationBairroId,
-      wasActivated,
-      existingBairroId: existing.location_bairro_id,
-      nfcWriteSession,
-      shortUrlPromise,
-      storedNfcUrl: existing.nfc_url,
-      storedNfcUid: existing.nfc_uid,
-      storedShortCode: existing.short_code,
-      forceTagWrite: true,
-      withoutActivation: nfcDraftOnly,
-      notes: nfcDraftOnly ? notes : undefined,
-    })
-    setBusy(null)
+    try {
+      const result = await activateNfc(supabase, existing.id, nfcUrl, {
+        locationBairroId,
+        wasActivated,
+        existingBairroId: existing.location_bairro_id,
+        nfcWriteSession,
+        shortUrlPromise,
+        storedNfcUrl: existing.nfc_url,
+        storedNfcUid: existing.nfc_uid,
+        storedShortCode: existing.short_code,
+        forceTagWrite: true,
+        withoutActivation: nfcDraftOnly,
+        notes: nfcDraftOnly ? notes : undefined,
+      })
 
-    if (result.cancelled) {
-      return
-    }
-    if (result.error) {
-      setError(result.error.message)
-      setNfcDebug(result.error.debug ?? null)
-      return
-    }
+      if (opId !== nfcOpRef.current) return
 
-    setNfcDebug(null)
-    const nfcSuccessText = result.hardwareSkipped
-      ? 'Link NFC salvo no sistema (a tag não foi regravada).'
-      : result.savedUrlOnly
-        ? 'Link NFC salvo.'
-        : 'NFC gravado com sucesso.'
-    finishSuccess(result.data, nfcSuccessText, {
-      tone: result.hardwareSkipped ? null : 'nfc',
-    })
+      if (result.cancelled) {
+        return
+      }
+      if (result.error) {
+        setError(result.error.message)
+        setNfcDebug(result.error.debug ?? null)
+        return
+      }
+
+      setNfcDebug(null)
+      setNfcHint(null)
+      const nfcSuccessText = result.hardwareSkipped
+        ? 'Link NFC salvo no sistema (a tag não foi regravada).'
+        : result.savedUrlOnly
+          ? 'Link NFC salvo.'
+          : 'NFC gravado com sucesso.'
+      finishSuccess(result.data, nfcSuccessText, {
+        tone: result.hardwareSkipped ? null : 'nfc',
+      })
+    } finally {
+      if (nfcWriteSessionRef.current === nfcWriteSession) {
+        nfcWriteSessionRef.current = null
+      }
+      if (opId === nfcOpRef.current) {
+        setBusy(null)
+      }
+    }
   }
 
   async function handleAtivacaoCompleta(e) {
@@ -477,6 +505,8 @@ const ActivateForm = forwardRef(function ActivateForm(
       )
       return
     }
+
+    abortActiveNfcWrite()
 
     const wasActivated = isCardActivated(existing)
     const qrTrimmed = destinationUrl.trim()
@@ -497,6 +527,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       )
       try {
         nfcWriteSession = createNfcWriteSession(shortUrlPromise)
+        nfcWriteSessionRef.current = nfcWriteSession
       } catch {
         setNfcHint('Use Chrome no Android para gravar NFC.')
         return
@@ -504,27 +535,33 @@ const ActivateForm = forwardRef(function ActivateForm(
     }
 
     if (!(await ensureBairroChangeBeforeSave())) {
-      nfcWriteSession?.abort()
+      abortActiveNfcWrite()
       return
     }
 
     setBusy('full')
 
-    const result = await activateComplete(supabase, existing.id, {
-      destinationUrl,
-      nfcUrl,
-      notes,
-      locationBairroId,
-      wasActivated,
-      existingBairroId: existing.location_bairro_id,
-      nfcWriteSession,
-      shortUrlPromise,
-      storedNfcUrl: existing.nfc_url,
-      storedNfcUid: existing.nfc_uid,
-      storedShortCode: existing.short_code,
-    })
-
-    setBusy(null)
+    let result
+    try {
+      result = await activateComplete(supabase, existing.id, {
+        destinationUrl,
+        nfcUrl,
+        notes,
+        locationBairroId,
+        wasActivated,
+        existingBairroId: existing.location_bairro_id,
+        nfcWriteSession,
+        shortUrlPromise,
+        storedNfcUrl: existing.nfc_url,
+        storedNfcUid: existing.nfc_uid,
+        storedShortCode: existing.short_code,
+      })
+    } finally {
+      if (nfcWriteSession && nfcWriteSessionRef.current === nfcWriteSession) {
+        nfcWriteSessionRef.current = null
+      }
+      setBusy(null)
+    }
 
     if (result.error) {
       if (result.step === 'nfc' && result.data) {
@@ -568,7 +605,12 @@ const ActivateForm = forwardRef(function ActivateForm(
   const showCodeField = standalone
   const formUnavailable = loadingCard || !existing
   const formLocked =
-    formUnavailable || busy === 'full' || busy === 'virgin-activate' || busy === 'activated-save'
+    formUnavailable ||
+    busy === 'full' ||
+    busy === 'virgin-activate' ||
+    busy === 'activated-save' ||
+    busy === 'nfc' ||
+    busy === 'qr'
 
   function fieldInputDisabled() {
     return (

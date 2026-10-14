@@ -354,11 +354,14 @@ export async function activateNfc(
     uid = await nfcWriteSession.waitForWrite()
   } catch (err) {
     nfcWriteSession?.abort()
+    if (err?.name === 'AbortError') {
+      return { data: null, error: null, cancelled: true }
+    }
     return {
       data: null,
       error: {
         message: getNfcUserMessage(err),
-        debug: err?.shortLinkDebug ?? null,
+        debug: err?.shortLinkDebug ?? err?.nfcWriteDiagnostic ?? null,
       },
       cancelled: false,
     }

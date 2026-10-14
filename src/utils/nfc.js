@@ -36,7 +36,10 @@ function mapNfcError(err) {
     return 'A gravação foi interrompida. Mantenha a tag encostada e parada até concluir.'
   }
   if (name === 'AbortError') {
-    return 'Gravação cancelada. Toque Salvar e encoste a tag de novo.'
+    return 'Gravação cancelada. Toque Gravar e encoste a tag de novo.'
+  }
+  if (name === 'NotWritableError' || msg.includes('not writable') || msg.includes('quota')) {
+    return 'Não foi possível sobrescrever esta tag (bloqueada ou sem espaço). Use NTAG213/215/216 ou apague o conteúdo antigo.'
   }
   if (msg.includes('ndefreader')) {
     return 'Use Chrome no Android, em HTTPS, com NFC ligado.'
@@ -79,6 +82,8 @@ export function createNfcWriteSession(urlOrPromise, { timeoutMs = DEFAULT_SCAN_M
   let aborted = false
   let scanError = null
   let timer = null
+  let writeSettled = false
+  let rejectWrite = null
 
   function stampNfcWriteDiagnostic(err, event, resolvedUrl) {
     const payload = buildNfcWriteDiagnostic(err, event, resolvedUrl)
@@ -96,30 +101,55 @@ export function createNfcWriteSession(urlOrPromise, { timeoutMs = DEFAULT_SCAN_M
   })
 
   const writePromise = new Promise((resolve, reject) => {
+    rejectWrite = reject
+
+    const abortErr = () => {
+      const err = new Error('AbortError')
+      err.name = 'AbortError'
+      return err
+    }
+
+    const settle = (fn, value) => {
+      if (writeSettled) return
+      writeSettled = true
+      if (timer != null) {
+        window.clearTimeout(timer)
+        timer = null
+      }
+      fn(value)
+    }
+
     timer = window.setTimeout(() => {
       const timeoutErr = new Error('TIMEOUT')
       stampNfcWriteDiagnostic(timeoutErr, undefined, '(pending)')
-      reject(timeoutErr)
+      settle(reject, timeoutErr)
     }, timeoutMs)
 
     const fail = (err, event, resolvedUrl) => {
+      if (aborted) {
+        settle(reject, abortErr())
+        return
+      }
       stampNfcWriteDiagnostic(err, event, resolvedUrl)
-      window.clearTimeout(timer)
-      timer = null
-      reject(err)
+      settle(reject, err)
     }
 
     const succeed = (uid) => {
-      window.clearTimeout(timer)
-      timer = null
-      resolve(uid)
+      if (aborted) {
+        settle(reject, abortErr())
+        return
+      }
+      settle(resolve, uid)
     }
 
     ndef.addEventListener(
       'readingerror',
       (e) => {
         console.error('[NFC readingerror]', e)
-        if (aborted) return
+        if (aborted) {
+          settle(reject, abortErr())
+          return
+        }
         const readErr = new Error('READ_ERROR')
         fail(readErr, e, '(pending)')
       },
@@ -129,12 +159,19 @@ export function createNfcWriteSession(urlOrPromise, { timeoutMs = DEFAULT_SCAN_M
     ndef.addEventListener(
       'reading',
       async (event) => {
-        if (aborted) return
+        if (aborted) {
+          settle(reject, abortErr())
+          return
+        }
         let finalUrl
         try {
           finalUrl = await urlPromise
         } catch (urlErr) {
           fail(urlErr, event, '(pending)')
+          return
+        }
+        if (aborted) {
+          settle(reject, abortErr())
           return
         }
         try {
@@ -157,6 +194,12 @@ export function createNfcWriteSession(urlOrPromise, { timeoutMs = DEFAULT_SCAN_M
       if (timer != null) {
         window.clearTimeout(timer)
         timer = null
+      }
+      if (!writeSettled && rejectWrite) {
+        const err = new Error('AbortError')
+        err.name = 'AbortError'
+        writeSettled = true
+        rejectWrite(err)
       }
     },
     async waitForWrite() {

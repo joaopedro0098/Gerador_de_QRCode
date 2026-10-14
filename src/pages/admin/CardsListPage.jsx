@@ -646,10 +646,12 @@ export default function CardsListPage() {
         focusActivate={focusActivate}
         onClose={closeCardModal}
         onSaved={handleCardSaved}
-        readOnlyActivated={filter === 'activated' || filter === 'virgin'}
-        stockUi={filter === 'stock'}
-        onPauseCard={filter === 'stock' ? handlePauseCard : undefined}
-        onDeactivateCard={filter === 'stock' ? requestDeactivateCard : undefined}
+        readOnlyActivated={filter === 'virgin'}
+        stockUi={filter === 'stock' || filter === 'activated'}
+        onPauseCard={filter === 'stock' || filter === 'activated' ? handlePauseCard : undefined}
+        onDeactivateCard={
+          filter === 'stock' || filter === 'activated' ? requestDeactivateCard : undefined
+        }
       />
 
       <CardAnnotationModal
