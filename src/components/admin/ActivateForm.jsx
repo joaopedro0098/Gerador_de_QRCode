@@ -16,7 +16,6 @@ import { isLojaCode, normalizeCode } from '../../utils/codes.js'
 import { isActiveCardBairroChange } from '../../utils/cardStatus.js'
 import { blockEmptyBackspaceNav } from '../../utils/formInput.js'
 import { createNfcWriteSession, isNfcSupported } from '../../utils/nfc.js'
-import { createNfcShortUrlPromise } from '../../utils/shortLinks.js'
 import { isValidHttpsUrl } from '../../utils/validate.js'
 
 const ActivateForm = forwardRef(function ActivateForm(
@@ -406,19 +405,12 @@ const ActivateForm = forwardRef(function ActivateForm(
       return
     }
 
-    const shortUrlPromise = createNfcShortUrlPromise(
-      supabase,
-      existing.id,
-      url,
-      existing.short_code,
-    )
-
     abortActiveNfcWrite()
     const opId = nfcOpRef.current
 
     let nfcWriteSession = null
     try {
-      nfcWriteSession = createNfcWriteSession(shortUrlPromise)
+      nfcWriteSession = createNfcWriteSession(url)
       nfcWriteSessionRef.current = nfcWriteSession
     } catch {
       setNfcHint('Use Chrome no Android para gravar NFC.')
@@ -449,10 +441,8 @@ const ActivateForm = forwardRef(function ActivateForm(
         wasActivated,
         existingBairroId: existing.location_bairro_id,
         nfcWriteSession,
-        shortUrlPromise,
         storedNfcUrl: existing.nfc_url,
         storedNfcUid: existing.nfc_uid,
-        storedShortCode: existing.short_code,
         forceTagWrite: true,
         withoutActivation: nfcDraftOnly,
         notes: nfcDraftOnly ? notes : undefined,
@@ -512,21 +502,14 @@ const ActivateForm = forwardRef(function ActivateForm(
     const qrTrimmed = destinationUrl.trim()
     const nfcTrimmed = nfcUrl.trim()
     let nfcWriteSession = null
-    let shortUrlPromise = null
     if (
       nfcTrimmed &&
       isValidHttpsUrl(nfcTrimmed) &&
       isNfcSupported() &&
       isNfcTagWriteRequired(existing, nfcTrimmed)
     ) {
-      shortUrlPromise = createNfcShortUrlPromise(
-        supabase,
-        existing.id,
-        nfcTrimmed,
-        existing.short_code,
-      )
       try {
-        nfcWriteSession = createNfcWriteSession(shortUrlPromise)
+        nfcWriteSession = createNfcWriteSession(nfcTrimmed)
         nfcWriteSessionRef.current = nfcWriteSession
       } catch {
         setNfcHint('Use Chrome no Android para gravar NFC.')
@@ -551,10 +534,8 @@ const ActivateForm = forwardRef(function ActivateForm(
         wasActivated,
         existingBairroId: existing.location_bairro_id,
         nfcWriteSession,
-        shortUrlPromise,
         storedNfcUrl: existing.nfc_url,
         storedNfcUid: existing.nfc_uid,
-        storedShortCode: existing.short_code,
       })
     } finally {
       if (nfcWriteSession && nfcWriteSessionRef.current === nfcWriteSession) {
@@ -591,7 +572,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       nfcTrimmed && !isNfcTagWriteRequired(existing, nfcTrimmed) && isNfcSupported()
     if (nfcDestOnlyUpdate) {
       setNfcHint(
-        'Destino NFC atualizado no servidor. A tag física não precisa ser gravada de novo (mesmo link curto).',
+        'Link NFC atualizado no sistema. A tag física não precisa ser gravada de novo (mesmo endereço).',
       )
     }
     finishSuccess(
@@ -783,7 +764,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       </label>
 
       {nfcDebug && (
-        <pre className="nfc-debug-panel" aria-label="Debug link curto NFC">
+        <pre className="nfc-debug-panel" aria-label="Debug NFC">
           {JSON.stringify(nfcDebug, null, 2)}
         </pre>
       )}

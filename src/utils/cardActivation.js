@@ -1,6 +1,5 @@
 import { getNfcUserMessage, isNfcSupported, normalizeUid } from './nfc.js'
 import { isCardActivated } from './cardStatus.js'
-import { ensureShortLinkForCard } from './shortLinks.js'
 import { isValidHttpsUrl } from './validate.js'
 
 export const CARD_FIELDS =
@@ -223,7 +222,6 @@ export async function saveNfcUrlOnly(
     locationBairroId,
     wasActivated,
     existingBairroId,
-    storedShortCode = null,
     withoutActivation = false,
     notes,
   } = {},
@@ -234,14 +232,6 @@ export async function saveNfcUrlOnly(
   }
   if (!isValidHttpsUrl(url)) {
     return { data: null, error: { message: 'O link NFC deve ser uma URL HTTPS válida.' } }
-  }
-
-  const short = await ensureShortLinkForCard(supabase, cardId, url, storedShortCode)
-  if (short.error) {
-    return {
-      data: null,
-      error: { message: short.error.message, debug: short.error.debug ?? null },
-    }
   }
 
   const { patch, error } = nfcDraftRowPatch({
@@ -255,23 +245,20 @@ export async function saveNfcUrlOnly(
 
   return supabase
     .from('cards')
-    .update({ nfc_url: url, short_code: short.code, ...patch })
+    .update({ nfc_url: url, ...patch })
     .eq('id', cardId)
     .select(CARD_FIELDS)
     .single()
 }
 
-/**
- * No fluxo Ativar: grava tag se ainda não há UID ou se nunca houve short_code (tag pode ter URL antiga).
- * Salvar NFC usa forceTagWrite e sempre grava quando há NFC no aparelho.
- */
+/** Grava tag se ainda não há UID ou se o link do formulário mudou em relação ao salvo. */
 export function isNfcTagWriteRequired(storedCard, nfcUrl) {
   const url = nfcUrl.trim()
   if (!url || !isValidHttpsUrl(url)) return false
   if (!isNfcSupported()) return false
   if (!storedCard?.nfc_uid?.trim()) return true
-  if (!storedCard?.short_code?.trim()) return true
-  return false
+  const stored = storedCard?.nfc_url?.trim() ?? ''
+  return stored !== url
 }
 
 /** Grava tag NFC e persiste nfc_url + nfc_uid. Ativa se ainda virgem. */
@@ -284,10 +271,8 @@ export async function activateNfc(
     wasActivated,
     existingBairroId,
     nfcWriteSession = null,
-    shortUrlPromise = null,
     storedNfcUrl = null,
     storedNfcUid = null,
-    storedShortCode = null,
     forceTagWrite = false,
     withoutActivation = false,
     notes,
@@ -303,7 +288,6 @@ export async function activateNfc(
       locationBairroId,
       wasActivated,
       existingBairroId,
-      storedShortCode,
       withoutActivation,
       notes,
     }).then((result) => ({ ...result, cancelled: false, savedUrlOnly: true }))
@@ -312,7 +296,6 @@ export async function activateNfc(
   const storedCard = {
     nfc_url: storedNfcUrl,
     nfc_uid: storedNfcUid,
-    short_code: storedShortCode,
   }
   if (!forceTagWrite && !isNfcTagWriteRequired(storedCard, url)) {
     nfcWriteSession?.abort()
@@ -320,13 +303,10 @@ export async function activateNfc(
       locationBairroId,
       wasActivated,
       existingBairroId,
-      storedShortCode,
       withoutActivation,
       notes,
     }).then((result) => ({ ...result, cancelled: false, hardwareSkipped: true }))
   }
-
-  let shortCode = storedShortCode?.trim() || null
 
   let uid
   try {
@@ -338,17 +318,6 @@ export async function activateNfc(
             'Toque Gravar no NFC de novo e encoste a tag quando aparecer «Aproxime a tag…».',
         },
         cancelled: false,
-      }
-    }
-    if (shortUrlPromise) {
-      await shortUrlPromise
-      if (!shortCode) {
-        const { data: row } = await supabase
-          .from('cards')
-          .select('short_code')
-          .eq('id', cardId)
-          .single()
-        shortCode = row?.short_code?.trim() || null
       }
     }
     uid = await nfcWriteSession.waitForWrite()
@@ -393,24 +362,11 @@ export async function activateNfc(
   })
   if (error) return { data: null, error, cancelled: false }
 
-  if (!shortCode) {
-    const short = await ensureShortLinkForCard(supabase, cardId, url, null)
-    if (short.error) {
-      return {
-        data: null,
-        error: { message: short.error.message, debug: short.error.debug ?? null },
-        cancelled: false,
-      }
-    }
-    shortCode = short.code
-  }
-
   const result = await supabase
     .from('cards')
     .update({
       nfc_url: url,
       nfc_uid: normalizeUid(uid),
-      short_code: shortCode,
       ...patch,
     })
     .eq('id', cardId)
@@ -432,10 +388,8 @@ export async function activateComplete(
     wasActivated,
     existingBairroId,
     nfcWriteSession = null,
-    shortUrlPromise = null,
     storedNfcUrl = null,
     storedNfcUid = null,
-    storedShortCode = null,
   },
 ) {
   const qrTrimmed = destinationUrl.trim()
@@ -492,10 +446,8 @@ export async function activateComplete(
     wasActivated: activated,
     existingBairroId: card?.location_bairro_id ?? existingBairroId,
     nfcWriteSession,
-    shortUrlPromise,
     storedNfcUrl: card?.nfc_url ?? storedNfcUrl,
     storedNfcUid: card?.nfc_uid ?? storedNfcUid,
-    storedShortCode: card?.short_code ?? storedShortCode,
   })
   if (nfcResult.cancelled) {
     return { data: card ?? nfcResult.data, error: null, nfcCancelled: true }
