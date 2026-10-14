@@ -828,6 +828,13 @@ input:focus {
   align-self: stretch;
 }
 
+.activate-form .activate-field-clear {
+  display: block;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  font-size: 0.75rem;
+}
+
 .activate-form label {
   text-align: left;
 }

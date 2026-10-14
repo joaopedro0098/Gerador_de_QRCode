@@ -75,11 +75,17 @@ export default async function handler(req, res) {
   const { targetUrl } = await resolveTarget(supabase, code)
 
   if (!targetUrl) {
-    res.writeHead(302, { Location: homeUrl(req) })
+    res.writeHead(302, {
+      Location: homeUrl(req),
+      'Cache-Control': 'no-store',
+    })
     res.end()
     return
   }
 
-  res.writeHead(302, { Location: targetUrl })
+  res.writeHead(302, {
+    Location: targetUrl,
+    'Cache-Control': 'no-store',
+  })
   res.end()
 }

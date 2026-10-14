@@ -740,6 +740,14 @@ const ActivateForm = forwardRef(function ActivateForm(
             </button>
           </div>
         )}
+        <button
+          type="button"
+          className="btn-ghost-link activate-field-clear"
+          disabled={fieldInputDisabled()}
+          onClick={() => setDestinationUrl('')}
+        >
+          Limpar
+        </button>
       </label>
 
       <label>
@@ -764,6 +772,14 @@ const ActivateForm = forwardRef(function ActivateForm(
             {busy === 'nfc' ? 'Aproxime a tag…' : 'Gravar'}
           </button>
         </div>
+        <button
+          type="button"
+          className="btn-ghost-link activate-field-clear"
+          disabled={fieldInputDisabled()}
+          onClick={() => setNfcUrl('')}
+        >
+          Limpar
+        </button>
       </label>
 
       {nfcDebug && (
