@@ -1,60 +1,90 @@
 import { useEffect, useRef, useState } from 'react'
 import { blockEmptyBackspaceNav } from '../../utils/formInput.js'
-import { getLocationPathLabels, searchBairrosByPrefix } from '../../utils/locationApi.js'
-import CreateBairroModal from './CreateBairroModal.jsx'
+import {
+  fetchLocationChainFromBairroId,
+  LOCATION_LEVEL_LABEL,
+  searchLocationChildren,
+} from '../../utils/locationApi.js'
 
-const DEBOUNCE_MS = 280
+const DEBOUNCE_MS = 200
+const LEVELS = ['estado', 'cidade', 'distrito', 'bairro']
 
-export default function BairroActivateField({
-  bairroId,
-  onBairroIdChange,
-  onBeforeBairroChange,
-  disabled,
+const EMPTY_CHAIN = { estado: null, cidade: null, distrito: null, bairro: null }
+
+function parentIdForLevel(level, chain) {
+  if (level === 'estado') return null
+  if (level === 'cidade') return chain.estado?.id ?? null
+  if (level === 'distrito') return chain.cidade?.id ?? null
+  if (level === 'bairro') return chain.distrito?.id ?? null
+  return null
+}
+
+function levelDisabled(level, chain, formDisabled) {
+  if (formDisabled) return true
+  if (level === 'estado') return false
+  return !parentIdForLevel(level, chain)
+}
+
+function placeholderForLevel(level, chain) {
+  if (level === 'estado') return 'nome do estado'
+  if (level === 'cidade' && !chain.estado) return 'selecione o estado acima'
+  if (level === 'distrito' && !chain.cidade) return 'selecione a cidade acima'
+  if (level === 'bairro' && !chain.distrito) return 'selecione o distrito acima'
+  return `nome do ${LOCATION_LEVEL_LABEL[level].toLowerCase()}`
+}
+
+function LocationLevelField({
+  level,
+  chain,
+  selected,
+  onSelect,
+  onTypingClearsSelection,
+  formDisabled,
 }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
-  const [pathLabel, setPathLabel] = useState('')
   const [openList, setOpenList] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const wrapRef = useRef(null)
 
-  useEffect(() => {
-    if (!bairroId) {
-      setPathLabel('')
-      return
-    }
-    let cancelled = false
-    getLocationPathLabels(bairroId).then(({ data }) => {
-      if (!cancelled) {
-        setPathLabel(data ?? '')
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [bairroId])
+  const disabled = levelDisabled(level, chain, formDisabled)
+  const parentId = parentIdForLevel(level, chain)
 
   useEffect(() => {
-    const term = query.trim()
-    if (!term) {
-      setResults([])
+    setQuery('')
+    setResults([])
+    setOpenList(false)
+  }, [parentId, selected?.id])
+
+  useEffect(() => {
+    if (!openList || disabled) {
       return
     }
+    if (level !== 'estado' && !parentId) {
+      return
+    }
+
     let cancelled = false
+    const term = query.trim()
+    const delay = term ? DEBOUNCE_MS : 0
+
     const timer = window.setTimeout(async () => {
       setLoading(true)
-      const { data } = await searchBairrosByPrefix(term)
+      const { data } = await searchLocationChildren({
+        level,
+        parentId: level === 'estado' ? null : parentId,
+        prefix: term,
+      })
       if (cancelled) return
       setLoading(false)
       setResults(data ?? [])
-      setOpenList(true)
-    }, DEBOUNCE_MS)
+    }, delay)
+
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [query])
+  }, [openList, query, level, parentId, disabled])
 
   useEffect(() => {
     function onDocDown(e) {
@@ -66,56 +96,42 @@ export default function BairroActivateField({
     return () => document.removeEventListener('mousedown', onDocDown)
   }, [])
 
-  async function selectBairro(item) {
-    if (onBeforeBairroChange) {
-      const allowed = await onBeforeBairroChange(item.id)
-      if (!allowed) return
+  const displayValue = query !== '' ? query : (selected?.name ?? '')
+
+  const showEmpty = openList && !loading && results.length === 0 && !disabled
+
+  function handleChange(e) {
+    const next = e.target.value
+    setQuery(next)
+    if (selected && next !== selected.name) {
+      onTypingClearsSelection()
     }
-    onBairroIdChange(item.id)
-    setPathLabel(item.pathLabel ?? item.name)
-    setQuery('')
-    setOpenList(false)
-    setResults([])
+    setOpenList(true)
   }
 
-  function clearSelectedBairro() {
+  function handleFocus() {
     if (disabled) return
-    onBairroIdChange(null)
-    setPathLabel('')
+    setOpenList(true)
+  }
+
+  function pickItem(item) {
+    onSelect(item)
     setQuery('')
     setOpenList(false)
     setResults([])
   }
-
-  const showEmpty =
-    openList && query.trim() && !loading && results.length === 0 && !disabled
 
   return (
-    <div className="bairro-field" ref={wrapRef}>
+    <div className="location-level-field" ref={wrapRef}>
       <label>
-        Escolha um Bairro
-        {bairroId && pathLabel ? (
-          <div className="bairro-selected-path-row">
-            <p className="bairro-selected-path muted">{pathLabel}</p>
-            <button
-              type="button"
-              className="bairro-clear-btn"
-              aria-label="Remover bairro selecionado"
-              title="Remover bairro"
-              disabled={disabled}
-              onClick={clearSelectedBairro}
-            >
-              ×
-            </button>
-          </div>
-        ) : null}
+        {LOCATION_LEVEL_LABEL[level]}
         <input
           type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={displayValue}
+          onChange={handleChange}
           onKeyDown={blockEmptyBackspaceNav}
-          onFocus={() => query.trim() && setOpenList(true)}
-          placeholder="nome do bairro"
+          onFocus={handleFocus}
+          placeholder={placeholderForLevel(level, chain)}
           disabled={disabled}
           autoComplete="off"
         />
@@ -125,9 +141,8 @@ export default function BairroActivateField({
         <ul className="bairro-suggest-list" role="listbox">
           {results.map((item) => (
             <li key={item.id}>
-              <button type="button" className="bairro-suggest-item" onClick={() => selectBairro(item)}>
+              <button type="button" className="bairro-suggest-item" onClick={() => pickItem(item)}>
                 <span className="bairro-suggest-name">{item.name}</span>
-                <span className="bairro-suggest-path muted">{item.pathLabel}</span>
               </button>
             </li>
           ))}
@@ -136,30 +151,91 @@ export default function BairroActivateField({
 
       {showEmpty && (
         <div className="bairro-suggest-empty">
-          <p className="form-hint muted">Nenhum bairro criado com este nome.</p>
-          <button type="button" className="btn secondary small" onClick={() => setCreateOpen(true)}>
-            Criar
-          </button>
+          <p className="form-hint muted">Não encontrado.</p>
         </div>
       )}
+    </div>
+  )
+}
 
-      <CreateBairroModal
-        open={createOpen}
-        initialBairroName={query.trim()}
-        onClose={() => setCreateOpen(false)}
-        onCreated={async (node) => {
-          if (onBeforeBairroChange) {
-            const allowed = await onBeforeBairroChange(node.id)
-            if (!allowed) return
+export default function BairroActivateField({
+  bairroId,
+  onBairroIdChange,
+  onBeforeBairroChange,
+  disabled,
+}) {
+  const [chain, setChain] = useState(EMPTY_CHAIN)
+
+  useEffect(() => {
+    if (!bairroId) return
+    let cancelled = false
+    fetchLocationChainFromBairroId(bairroId).then(({ data }) => {
+      if (!cancelled && data) {
+        setChain(data)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [bairroId])
+
+  function clearFromLevel(level) {
+    const idx = LEVELS.indexOf(level)
+    const next = { ...chain }
+    for (let i = idx; i < LEVELS.length; i += 1) {
+      next[LEVELS[i]] = null
+    }
+    setChain(next)
+    if (level !== 'bairro' || chain.bairro) {
+      onBairroIdChange(null)
+    }
+  }
+
+  async function selectAtLevel(level, node) {
+    const idx = LEVELS.indexOf(level)
+    const next = { ...chain }
+    for (let i = idx; i < LEVELS.length; i += 1) {
+      next[LEVELS[i]] = i === idx ? node : null
+    }
+    setChain(next)
+
+    if (level === 'bairro' && node) {
+      if (onBeforeBairroChange) {
+        const allowed = await onBeforeBairroChange(node.id)
+        if (!allowed) {
+          if (bairroId) {
+            fetchLocationChainFromBairroId(bairroId).then(({ data }) => {
+              if (data) setChain(data)
+            })
           }
-          const { data } = await getLocationPathLabels(node.id)
-          onBairroIdChange(node.id)
-          setPathLabel(data ?? node.name)
-          setQuery('')
-          setOpenList(false)
-          setResults([])
-        }}
-      />
+          return
+        }
+      }
+      onBairroIdChange(node.id)
+    } else {
+      onBairroIdChange(null)
+    }
+  }
+
+  return (
+    <div className="bairro-field location-cascade-fields">
+      {LEVELS.map((level) => (
+        <LocationLevelField
+          key={level}
+          level={level}
+          chain={chain}
+          selected={chain[level]}
+          formDisabled={disabled}
+          onSelect={(node) => {
+            if (!node) {
+              clearFromLevel(level)
+              return
+            }
+            selectAtLevel(level, node)
+          }}
+          onTypingClearsSelection={() => clearFromLevel(level)}
+        />
+      ))}
     </div>
   )
 }

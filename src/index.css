@@ -1648,6 +1648,16 @@ input:focus {
   position: relative;
 }
 
+.location-cascade-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.location-level-field {
+  position: relative;
+}
+
 .bairro-selected-path-row {
   display: flex;
   align-items: flex-start;

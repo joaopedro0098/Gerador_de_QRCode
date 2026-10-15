@@ -35,6 +35,59 @@ export async function listLocationChildren(parentId, level) {
   return query
 }
 
+/** Filtra filhos por prefixo (ilike); prefixo vazio lista todos (até `limit`). */
+export async function searchLocationChildren({ level, parentId, prefix = '', limit = 80 }) {
+  if (level !== 'estado' && !parentId) {
+    return { data: [], error: null }
+  }
+
+  let query = supabase.from('location_nodes').select(NODE_FIELDS).eq('level', level).order('name').limit(limit)
+
+  if (level === 'estado') {
+    query = query.is('parent_id', null)
+  } else {
+    query = query.eq('parent_id', parentId)
+  }
+
+  const trimmed = prefix.trim()
+  if (trimmed) {
+    query = query.ilike('name', `${escapeIlikePrefix(trimmed)}%`)
+  }
+
+  return query
+}
+
+/** Estado → … → bairro a partir do id do bairro (nós já cadastrados em Ativados). */
+export async function fetchLocationChainFromBairroId(bairroId) {
+  const empty = { estado: null, cidade: null, distrito: null, bairro: null }
+  if (!bairroId) return { data: empty, error: null }
+
+  const { data: bairro, error: bairroError } = await supabase
+    .from('location_nodes')
+    .select(NODE_FIELDS)
+    .eq('id', bairroId)
+    .maybeSingle()
+
+  if (bairroError) return { data: empty, error: bairroError }
+  if (!bairro || bairro.level !== 'bairro') return { data: empty, error: null }
+
+  const chain = { ...empty, bairro }
+  let current = bairro
+  while (current.parent_id) {
+    const { data: parent, error } = await supabase
+      .from('location_nodes')
+      .select(NODE_FIELDS)
+      .eq('id', current.parent_id)
+      .maybeSingle()
+    if (error) return { data: empty, error }
+    if (!parent) break
+    chain[parent.level] = parent
+    current = parent
+  }
+
+  return { data: chain, error: null }
+}
+
 export async function searchBairrosByPrefix(term, limit = 12) {
   const prefix = escapeIlikePrefix(term.trim())
   if (!prefix) return { data: [], error: null }

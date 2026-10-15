@@ -59,7 +59,7 @@ function activationPatch({ wasActivated, bairroId, existingBairroId, locationBai
   const effectiveBairro = resolveBairroId({ locationBairroId, existingBairroId: bairroId ?? existingBairroId })
   if (!wasActivated) {
     if (!effectiveBairro) {
-      return { error: { message: 'Selecione ou crie um bairro antes de ativar.' } }
+      return { error: { message: 'Selecione estado, cidade, distrito e bairro antes de ativar.' } }
     }
     patch.activated_at = new Date().toISOString()
     patch.location_bairro_id = locationBairroId ?? effectiveBairro
@@ -217,7 +217,7 @@ function nfcDraftRowPatch({
   if (withoutActivation && !wasActivated) {
     const bairro = locationBairroId ?? existingBairroId ?? null
     if (!bairro) {
-      return { error: { message: 'Selecione ou crie um bairro antes de gravar.' } }
+      return { error: { message: 'Selecione estado, cidade, distrito e bairro antes de gravar.' } }
     }
     return {
       patch: {

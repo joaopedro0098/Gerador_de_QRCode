@@ -168,7 +168,7 @@ const ActivateForm = forwardRef(function ActivateForm(
 
   function validateVirginBairroAndEstablishment() {
     if (!locationBairroId) {
-      setError('Selecione ou crie um bairro.')
+      setError('Selecione estado, cidade, distrito e bairro.')
       return false
     }
     if (!notes.trim()) {
@@ -660,6 +660,7 @@ const ActivateForm = forwardRef(function ActivateForm(
 
       {!loadingCard && existing && !hideBairroField && (
         <BairroActivateField
+          key={existing.id}
           bairroId={locationBairroId}
           onBairroIdChange={setLocationBairroId}
           onBeforeBairroChange={onBeforeBairroChange}
