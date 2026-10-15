@@ -54,7 +54,9 @@ export default function CardDetailModal({
     if (!isOpen || !card || activateOnly) return
     let cancelled = false
     setQrLoading(true)
-    qrSvgForCode(card.code).then((result) => {
+    const codeForQr = displayCard?.code ?? card.code
+    const destForQr = displayCard?.destination_url ?? card.destination_url
+    qrSvgForCode(codeForQr, destForQr).then((result) => {
       if (!cancelled) {
         setSvg(result)
         setQrLoading(false)
@@ -63,7 +65,7 @@ export default function CardDetailModal({
     return () => {
       cancelled = true
     }
-  }, [card?.code, activateOnly, isOpen])
+  }, [card, displayCard?.code, displayCard?.destination_url, activateOnly, isOpen])
 
   const editingActivatedCard = Boolean(displayCard && isCardActivated(displayCard))
   const readOnly = readOnlyActivated && !stockUi && !activateOnly
