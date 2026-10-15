@@ -583,7 +583,7 @@ export default function CardsListPage() {
           return false
         }
         if (!data) {
-          setStockScanError('QR code não reconhecido no sistema.')
+          setStockScanError('Este QR code não está cadastrado no sistema.')
           return false
         }
         if (isCardActivated(data)) {
