@@ -18,7 +18,11 @@ import {
   isCardInStock,
   isCardVirgin,
 } from '../../utils/cardStatus.js'
-import { fetchCardByQrScanText } from '../../utils/resolveCardFromQrScan.js'
+import {
+  fetchCardByLojaCodeFlexible,
+  fetchCardByQrScanText,
+} from '../../utils/resolveCardFromQrScan.js'
+import { parseCardCodeFromQrText } from '../../utils/parseQrScan.js'
 import { sendAllVirginCardsToStock, sendVirginCardsToStock } from '../../utils/cardStock.js'
 import { PAGE_SIZE } from '../../lib/config.js'
 import {
@@ -572,41 +576,85 @@ export default function CardsListPage() {
     setStockScanOpen(true)
   }, [])
 
+  const openStockActivationModal = useCallback(
+    (card) => {
+      setStockScanOpen(false)
+      setFilter('stock')
+      setSearchParams({ code: card.code })
+      openCardModal(card, true)
+    },
+    [openCardModal, setSearchParams],
+  )
+
   const handleStockQrScanText = useCallback(
     async (rawText) => {
       setStockScanBusy(true)
       setStockScanError(null)
       try {
-        const { data, error: fetchError } = await fetchCardByQrScanText(supabase, rawText)
+        let card = null
+        let fetchError = null
+
+        const lookup = await fetchCardByQrScanText(supabase, rawText)
+        fetchError = lookup.error
+        card = lookup.data
+
+        if (!card) {
+          const parsed =
+            lookup.parsedCode ||
+            parseCardCodeFromQrText(rawText) ||
+            parseCardCodeFromQrText(String(rawText ?? '').trim())
+          if (parsed) {
+            const retry = await fetchCardByLojaCodeFlexible(supabase, parsed)
+            fetchError = retry.error ?? fetchError
+            card = retry.data
+          }
+        }
+
         if (fetchError) {
           setStockScanError(fetchError.message)
           return false
         }
-        if (!data) {
-          setStockScanError('Este QR code não está cadastrado no sistema.')
+
+        if (!card) {
+          setStockScanError(
+            'Este QR code não está cadastrado no sistema. Confira se o ID foi gerado em Virgens.',
+          )
           return false
         }
-        if (isCardActivated(data)) {
+
+        if (isCardActivated(card)) {
           setStockScanError('Este QR code está no status ativo.')
           return false
         }
-        if (isCardVirgin(data)) {
-          setStockScanError('Este QR code está no status virgem.')
-          return false
+
+        if (isCardVirgin(card)) {
+          const { data: moved, error: stockError } = await sendVirginCardsToStock(supabase, [card.id])
+          if (stockError) {
+            setStockScanError(stockError.message)
+            return false
+          }
+          const inStock = moved?.[0]
+          if (!inStock) {
+            setStockScanError('Não foi possível enviar este ID para o estoque.')
+            return false
+          }
+          openStockActivationModal(inStock)
+          loadCards({ silent: true })
+          return true
         }
-        if (!isCardInStock(data)) {
+
+        if (!isCardInStock(card)) {
           setStockScanError('Este QR code não está no estoque.')
           return false
         }
-        setStockScanOpen(false)
-        setFilter('stock')
-        openCardModal(data, true)
+
+        openStockActivationModal(card)
         return true
       } finally {
         setStockScanBusy(false)
       }
     },
-    [openCardModal],
+    [loadCards, openStockActivationModal],
   )
 
   return (

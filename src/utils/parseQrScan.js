@@ -7,6 +7,18 @@ function cleanScanPayload(text) {
     .replace(/^["']|["']$/g, '')
 }
 
+/** Remove query/hash para bater com destination_url salvo. */
+export function normalizeQrScanPayload(text) {
+  const raw = cleanScanPayload(text)
+  if (!raw) return raw
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw.replace(/^\/+/, '')}`)
+    return `${url.origin}${url.pathname}`.replace(/\/+$/, '') || raw
+  } catch {
+    return raw
+  }
+}
+
 /** Extrai o ID lojaXX do texto lido no QR (URL /c/..., /r/..., id puro ou trecho lojaNN). */
 export function parseCardCodeFromQrText(text) {
   const raw = cleanScanPayload(text)
