@@ -15,6 +15,7 @@ function CardsListStatusToolbar({
   onFilterChange,
   onAdicionarClick,
   onGerarClick,
+  onStockCadastrarClick,
   showActivatedExplorer,
 }) {
   const isActivated = filter === 'activated'
@@ -78,13 +79,22 @@ function CardsListStatusToolbar({
             >
               Place ID
             </a>
-            <button
-              type="button"
-              className="btn secondary small toolbar-codes-tab"
-              onClick={() => setPlaceLinkOpen(true)}
-            >
-              Gerar link
-            </button>
+            <div className="toolbar-codes-stock-actions-stack">
+              <button
+                type="button"
+                className="btn secondary small toolbar-codes-tab"
+                onClick={() => setPlaceLinkOpen(true)}
+              >
+                Gerar link
+              </button>
+              <button
+                type="button"
+                className="btn secondary small toolbar-codes-tab"
+                onClick={onStockCadastrarClick}
+              >
+                Cadastrar
+              </button>
+            </div>
           </div>
         )}
         <div

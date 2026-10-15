@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ActivatedLocationsExplorer from '../../components/admin/ActivatedLocationsExplorer.jsx'
 import CardsListStatusToolbar from '../../components/admin/CardsListStatusToolbar.jsx'
+import StockQrScanModal from '../../components/admin/StockQrScanModal.jsx'
 import BatchGenerateModal from '../../components/admin/BatchGenerateModal.jsx'
 import CardAnnotationModal from '../../components/admin/CardAnnotationModal.jsx'
 import CardDetailModal from '../../components/admin/CardDetailModal.jsx'
@@ -15,7 +16,9 @@ import {
   applyVirginCardsFilter,
   isCardActivated,
   isCardInStock,
+  isCardVirgin,
 } from '../../utils/cardStatus.js'
+import { fetchCardByQrScanText } from '../../utils/resolveCardFromQrScan.js'
 import { sendAllVirginCardsToStock, sendVirginCardsToStock } from '../../utils/cardStock.js'
 import { PAGE_SIZE } from '../../lib/config.js'
 import {
@@ -53,6 +56,9 @@ export default function CardsListPage() {
   const [stockSendConfirm, setStockSendConfirm] = useState(null)
   const [qrDownloadBusy, setQrDownloadBusy] = useState(false)
   const [qrDownloadProgress, setQrDownloadProgress] = useState('')
+  const [stockScanOpen, setStockScanOpen] = useState(false)
+  const [stockScanBusy, setStockScanBusy] = useState(false)
+  const [stockScanError, setStockScanError] = useState(null)
   const activatedExplorerRef = useRef(null)
   const listFetchGenRef = useRef(0)
   const prevListQueryRef = useRef({
@@ -561,6 +567,48 @@ export default function CardsListPage() {
     setGerarOpen(true)
   }, [])
 
+  const handleStockCadastrarClick = useCallback(() => {
+    setStockScanError(null)
+    setStockScanOpen(true)
+  }, [])
+
+  const handleStockQrScanText = useCallback(
+    async (rawText) => {
+      setStockScanBusy(true)
+      setStockScanError(null)
+      try {
+        const { data, error: fetchError } = await fetchCardByQrScanText(supabase, rawText)
+        if (fetchError) {
+          setStockScanError(fetchError.message)
+          return false
+        }
+        if (!data) {
+          setStockScanError('QR code não reconhecido no sistema.')
+          return false
+        }
+        if (isCardActivated(data)) {
+          setStockScanError('Este QR code está no status ativo.')
+          return false
+        }
+        if (isCardVirgin(data)) {
+          setStockScanError('Este QR code está no status virgem.')
+          return false
+        }
+        if (!isCardInStock(data)) {
+          setStockScanError('Este QR code não está no estoque.')
+          return false
+        }
+        setStockScanOpen(false)
+        setFilter('stock')
+        openCardModal(data, true)
+        return true
+      } finally {
+        setStockScanBusy(false)
+      }
+    },
+    [openCardModal],
+  )
+
   return (
     <div className="admin-page admin-page-codes">
       <CardsListStatusToolbar
@@ -570,7 +618,16 @@ export default function CardsListPage() {
         onFilterChange={handleFilterChange}
         onAdicionarClick={handleAdicionarClick}
         onGerarClick={handleGerarClick}
+        onStockCadastrarClick={handleStockCadastrarClick}
         showActivatedExplorer={showActivatedExplorer}
+      />
+
+      <StockQrScanModal
+        open={stockScanOpen}
+        busy={stockScanBusy}
+        scanError={stockScanError}
+        onClose={() => !stockScanBusy && setStockScanOpen(false)}
+        onScanText={handleStockQrScanText}
       />
 
       <div className="cards-list-panel" aria-live="polite">
