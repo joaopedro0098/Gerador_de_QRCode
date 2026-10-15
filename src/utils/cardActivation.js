@@ -3,11 +3,19 @@ import { isCardActivated } from './cardStatus.js'
 import { isValidHttpsUrl } from './validate.js'
 
 export const CARD_FIELDS =
-  'id, code, destination_url, activated_at, stock_at, notes, nfc_url, nfc_uid, short_code, created_at, location_bairro_id, paused, annotation'
+  'id, code, destination_url, activated_at, stock_at, notes, owner_name, contact, nfc_url, nfc_uid, short_code, created_at, location_bairro_id, paused, annotation'
 
 /** Lista Virgens — sem created_at (não exibido na UI). */
 export const CARD_VIRGIN_LIST_FIELDS =
-  'id, code, destination_url, activated_at, stock_at, notes, nfc_url, nfc_uid, short_code, location_bairro_id, paused, annotation'
+  'id, code, destination_url, activated_at, stock_at, notes, owner_name, contact, nfc_url, nfc_uid, short_code, location_bairro_id, paused, annotation'
+
+export function optionalStockContactFields({ ownerName, contact } = {}) {
+  if (ownerName === undefined && contact === undefined) return {}
+  return {
+    owner_name: ownerName?.trim() || null,
+    contact: contact?.trim() || null,
+  }
+}
 
 export { isCardActivated }
 
@@ -74,6 +82,8 @@ export async function activateVirginCard(
     wasActivated,
     existingBairroId,
     storedStockAt = null,
+    ownerName,
+    contact,
   },
 ) {
   if (!wasActivated && !storedStockAt) {
@@ -111,6 +121,7 @@ export async function activateVirginCard(
 
   const update = {
     notes: notes.trim(),
+    ...optionalStockContactFields({ ownerName, contact }),
     ...patch,
   }
   if (qr) update.destination_url = qr
@@ -123,7 +134,15 @@ export async function activateVirginCard(
 export async function saveActivatedCardFields(
   supabase,
   cardId,
-  { notes, destinationUrl = '', nfcUrl = '', storedDestinationUrl = '', storedNfcUrl = '' },
+  {
+    notes,
+    destinationUrl = '',
+    nfcUrl = '',
+    storedDestinationUrl = '',
+    storedNfcUrl = '',
+    ownerName,
+    contact,
+  },
 ) {
   const est = notes?.trim()
   const qr = destinationUrl.trim()
@@ -144,7 +163,10 @@ export async function saveActivatedCardFields(
     return { data: null, error: { message: 'O link do QR deve ser uma URL HTTPS válida.' } }
   }
 
-  const update = { notes: est }
+  const update = {
+    notes: est,
+    ...optionalStockContactFields({ ownerName, contact }),
+  }
   if (qr) {
     update.destination_url = qr
   }
@@ -187,6 +209,8 @@ function nfcDraftRowPatch({
   locationBairroId,
   existingBairroId,
   notes,
+  ownerName,
+  contact,
   wasActivated,
   withoutActivation,
 }) {
@@ -199,6 +223,7 @@ function nfcDraftRowPatch({
       patch: {
         location_bairro_id: bairro,
         ...(notes !== undefined ? { notes: notes?.trim() || null } : {}),
+        ...optionalStockContactFields({ ownerName, contact }),
       },
     }
   }
@@ -224,6 +249,8 @@ export async function saveNfcUrlOnly(
     existingBairroId,
     withoutActivation = false,
     notes,
+    ownerName,
+    contact,
   } = {},
 ) {
   const url = nfcUrl.trim()
@@ -238,6 +265,8 @@ export async function saveNfcUrlOnly(
     locationBairroId,
     existingBairroId,
     notes,
+    ownerName,
+    contact,
     wasActivated,
     withoutActivation,
   })
@@ -276,6 +305,8 @@ export async function activateNfc(
     forceTagWrite = false,
     withoutActivation = false,
     notes,
+    ownerName,
+    contact,
   } = {},
 ) {
   const url = nfcUrl.trim()
@@ -290,6 +321,8 @@ export async function activateNfc(
       existingBairroId,
       withoutActivation,
       notes,
+      ownerName,
+      contact,
     }).then((result) => ({ ...result, cancelled: false, savedUrlOnly: true }))
   }
 
@@ -305,6 +338,8 @@ export async function activateNfc(
       existingBairroId,
       withoutActivation,
       notes,
+      ownerName,
+      contact,
     }).then((result) => ({ ...result, cancelled: false, hardwareSkipped: true }))
   }
 
@@ -357,6 +392,8 @@ export async function activateNfc(
     locationBairroId,
     existingBairroId,
     notes,
+    ownerName,
+    contact,
     wasActivated,
     withoutActivation,
   })
@@ -390,6 +427,8 @@ export async function activateComplete(
     nfcWriteSession = null,
     storedNfcUrl = null,
     storedNfcUid = null,
+    ownerName,
+    contact,
   },
 ) {
   const qrTrimmed = destinationUrl.trim()
@@ -422,7 +461,10 @@ export async function activateComplete(
   if (notes !== undefined) {
     const notesResult = await supabase
       .from('cards')
-      .update({ notes: notes.trim() || null })
+      .update({
+        notes: notes.trim() || null,
+        ...optionalStockContactFields({ ownerName, contact }),
+      })
       .eq('id', cardId)
       .select(CARD_FIELDS)
       .single()
@@ -448,6 +490,8 @@ export async function activateComplete(
     nfcWriteSession,
     storedNfcUrl: card?.nfc_url ?? storedNfcUrl,
     storedNfcUid: card?.nfc_uid ?? storedNfcUid,
+    ownerName,
+    contact,
   })
   if (nfcResult.cancelled) {
     return { data: card ?? nfcResult.data, error: null, nfcCancelled: true }

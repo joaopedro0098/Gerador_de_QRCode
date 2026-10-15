@@ -36,6 +36,8 @@ const ActivateForm = forwardRef(function ActivateForm(
   const [destinationUrl, setDestinationUrl] = useState('')
   const [nfcUrl, setNfcUrl] = useState('')
   const [notes, setNotes] = useState('')
+  const [ownerName, setOwnerName] = useState('')
+  const [contact, setContact] = useState('')
   const [busy, setBusy] = useState(null)
   const [loadingCard, setLoadingCard] = useState(Boolean(card?.id))
   const [message, setMessage] = useState(null)
@@ -71,6 +73,8 @@ const ActivateForm = forwardRef(function ActivateForm(
     setDestinationUrl(data.destination_url ?? '')
     setNfcUrl(data.nfc_url ?? '')
     setNotes(data.notes?.trim() ? data.notes : '')
+    setOwnerName(data.owner_name?.trim() ? data.owner_name : '')
+    setContact(data.contact?.trim() ? data.contact : '')
     setLocationBairroId(data.location_bairro_id ?? null)
   }
 
@@ -87,6 +91,8 @@ const ActivateForm = forwardRef(function ActivateForm(
         setDestinationUrl('')
         setNfcUrl('')
         setNotes('')
+        setOwnerName('')
+        setContact('')
         setLoadingCard(false)
         return
       }
@@ -106,6 +112,8 @@ const ActivateForm = forwardRef(function ActivateForm(
             setDestinationUrl('')
             setNfcUrl('')
             setNotes('')
+            setOwnerName('')
+            setContact('')
             return
           }
           applyCardData(data)
@@ -133,6 +141,8 @@ const ActivateForm = forwardRef(function ActivateForm(
           setDestinationUrl('')
           setNfcUrl('')
           setNotes('')
+          setOwnerName('')
+          setContact('')
           return
         }
         applyCardData(data)
@@ -241,6 +251,8 @@ const ActivateForm = forwardRef(function ActivateForm(
   const activatedEditUi =
     hideBairroField && hideActivateButton && !stockActivationUi && !stockManageUi && !standalone
   const unifiedFieldUi = stockActivationUi || stockManageUi || activatedEditUi
+  const showStockContactFields = stockActivationUi || stockManageUi
+  const stockContactPayload = showStockContactFields ? { ownerName, contact } : {}
 
   const handleActivatedEditSave = async () => {
     setError(null)
@@ -258,6 +270,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       nfcUrl,
       storedDestinationUrl: existing.destination_url,
       storedNfcUrl: existing.nfc_url,
+      ...stockContactPayload,
     })
     setBusy(null)
 
@@ -364,6 +377,7 @@ const ActivateForm = forwardRef(function ActivateForm(
       wasActivated,
       existingBairroId: existing.location_bairro_id,
       storedStockAt: existing.stock_at,
+      ...stockContactPayload,
     })
 
     setBusy(null)
@@ -446,6 +460,7 @@ const ActivateForm = forwardRef(function ActivateForm(
         forceTagWrite: true,
         withoutActivation: nfcDraftOnly,
         notes: nfcDraftOnly ? notes : undefined,
+        ...(nfcDraftOnly ? stockContactPayload : {}),
       })
 
       if (opId !== nfcOpRef.current) return
@@ -538,6 +553,7 @@ const ActivateForm = forwardRef(function ActivateForm(
         nfcWriteSession,
         storedNfcUrl: existing.nfc_url,
         storedNfcUid: existing.nfc_uid,
+        ...stockContactPayload,
       })
     } finally {
       if (nfcWriteSession && nfcWriteSessionRef.current === nfcWriteSession) {
@@ -684,6 +700,35 @@ const ActivateForm = forwardRef(function ActivateForm(
             </div>
           )}
         </label>
+      )}
+
+      {!loadingCard && existing && showStockContactFields && (
+        <>
+          <label>
+            Nome do proprietário
+            <input
+              type="text"
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              onKeyDown={blockEmptyBackspaceNav}
+              placeholder="opcional"
+              disabled={fieldInputDisabled()}
+              autoComplete="name"
+            />
+          </label>
+          <label>
+            Contato
+            <input
+              type="text"
+              value={contact}
+              onChange={(e) => setContact(e.target.value)}
+              onKeyDown={blockEmptyBackspaceNav}
+              placeholder="opcional"
+              disabled={fieldInputDisabled()}
+              autoComplete="tel"
+            />
+          </label>
+        </>
       )}
 
       <label className="activate-field-with-clear">
