@@ -1,9 +1,8 @@
 import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import ActivatedCardMobileList from './ActivatedCardMobileList.jsx'
 import ActivatedNodeMenu from './ActivatedNodeMenu.jsx'
-import CardsTable from './CardsTable.jsx'
 import LocationNodeModal from './LocationNodeModal.jsx'
-import { useMaxWidth } from '../../hooks/useMediaQuery.js'
+import Pagination from '../ui/Pagination.jsx'
 import {
   CHILD_LEVEL,
   LOCATION_LEVELS,
@@ -52,6 +51,17 @@ const PATH_DEPTH_BY_VIEW = {
   cards: 3,
 }
 
+const EXPLORER_PAGE_SIZE = 10
+
+function paginateItems(items, page) {
+  const start = (page - 1) * EXPLORER_PAGE_SIZE
+  return items.slice(start, start + EXPLORER_PAGE_SIZE)
+}
+
+function pageCountForLength(length) {
+  return Math.max(1, Math.ceil(length / EXPLORER_PAGE_SIZE))
+}
+
 const EMPTY_CHILD_LAYER = {
   cidade: {
     message: 'Não há cidades cadastradas.',
@@ -86,11 +96,12 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
   const [activeCountByNodeId, setActiveCountByNodeId] = useState(() => new Map())
   const [error, setError] = useState(null)
   const [isFetching, setIsFetching] = useState(false)
+  const [page, setPage] = useState(1)
   const [nodeModal, setNodeModal] = useState(null)
   const selectedRef = useRef(selected)
   const activeViewRef = useRef(activeView)
   const fetchGenRef = useRef(0)
-  const isMobile = useMaxWidth(820)
+  const countsGenRef = useRef(0)
 
   function blurActiveElement() {
     const el = document.activeElement
@@ -111,10 +122,20 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
     return data ?? []
   }, [])
 
+  const refreshActiveCounts = useCallback(async () => {
+    const gen = ++countsGenRef.current
+    const { counts, error: countsError } = await fetchLocationSubtreeActiveCounts()
+    if (gen !== countsGenRef.current) return
+    if (!countsError && counts) {
+      setActiveCountByNodeId(counts)
+    }
+  }, [])
+
   const refreshForView = useCallback(
-    async (sel, view) => {
+    async (sel, view, { refreshCounts = false } = {}) => {
       const gen = ++fetchGenRef.current
       setError(null)
+      setPage(1)
       setIsFetching(true)
       setActiveView(view)
       activeViewRef.current = view
@@ -154,18 +175,15 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
         }
       }
 
-      fetchLocationSubtreeActiveCounts().then(({ counts, error: countsError }) => {
-        if (gen !== fetchGenRef.current) return
-        if (!countsError && counts) {
-          setActiveCountByNodeId(counts)
-        }
-      })
+      if (refreshCounts) {
+        void refreshActiveCounts()
+      }
     },
-    [loadLevel],
+    [loadLevel, refreshActiveCounts],
   )
 
   useEffect(() => {
-    refreshForView(selectedRef.current, activeViewRef.current)
+    void refreshForView(selectedRef.current, activeViewRef.current, { refreshCounts: true })
   }, [refreshKey, refreshForView])
 
   function selectNode(level, node) {
@@ -216,7 +234,7 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
           : level === 'distrito'
             ? 'distrito'
             : 'bairro'
-    await refreshForView(nextSel, viewAfterDelete)
+    await refreshForView(nextSel, viewAfterDelete, { refreshCounts: true })
   }
 
   function openEditNode(node, level) {
@@ -275,9 +293,6 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
                 <button
                   type="button"
                   className="location-layer-path-link"
-                  onPointerDown={(e) => {
-                    if (e.pointerType === 'touch') e.preventDefault()
-                  }}
                   onClick={() => goToView(step.view)}
                 >
                   {step.label}
@@ -292,14 +307,23 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
 
   const listLevel = activeView === 'cards' ? null : activeView
   const selectedAtLevel = listLevel ? selected[listLevel] : null
+  const paginatedNodes = listLevel ? paginateItems(currentItems, page) : []
+  const paginatedCards = activeView === 'cards' ? paginateItems(cards, page) : []
+  const nodesPageCount = pageCountForLength(currentItems.length)
+  const cardsPageCount = pageCountForLength(cards.length)
+  const explorerPageCount = activeView === 'cards' ? cardsPageCount : nodesPageCount
+
+  useEffect(() => {
+    if (page > explorerPageCount) {
+      setPage(explorerPageCount)
+    }
+  }, [page, explorerPageCount])
+
   return (
     <div className="activated-explorer">
       {error && <p className="form-hint error">{error}</p>}
 
-      <div
-        className={`activated-explorer-stage${isFetching ? ' activated-explorer-stage--busy' : ''}`}
-        aria-busy={isFetching ? 'true' : 'false'}
-      >
+      <div className="activated-explorer-stage" aria-busy={isFetching ? 'true' : 'false'}>
         {(listLevel || activeView === 'cards') && (
           <div className="location-layer-head">{renderLayerPathNav()}</div>
         )}
@@ -317,8 +341,11 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
         ) : null}
 
         {listLevel && (isFetching || currentItems.length > 0) && (
-          <div className="location-card-grid">
-            {currentItems.map((node) => (
+          <div
+            className={`location-card-grid${isFetching ? ' location-card-grid--busy' : ''}`}
+            aria-busy={isFetching ? 'true' : undefined}
+          >
+            {paginatedNodes.map((node) => (
               <div
                 key={node.id}
                 className={`location-chip-card${selectedAtLevel?.id === node.id ? ' selected' : ''}`}
@@ -326,9 +353,6 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
                 <button
                   type="button"
                   className="location-chip-main location-chip-main-full"
-                  onPointerDown={(e) => {
-                    if (e.pointerType === 'touch') e.preventDefault()
-                  }}
                   onClick={() => selectNode(listLevel, node)}
                 >
                   <span className="location-chip-label">{node.name}</span>
@@ -347,6 +371,16 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
           </div>
         )}
 
+        {listLevel && currentItems.length > 0 && (
+          <Pagination
+            page={page}
+            pageCount={nodesPageCount}
+            onPageChange={setPage}
+            disabled={isFetching}
+            busy={isFetching}
+          />
+        )}
+
         {listLevel === 'estado' && !isFetching && !currentItems.length && (
           <p className="muted location-empty location-layer-empty-state">
             Nenhum estado cadastrado. Use Adicionar no topo.
@@ -354,28 +388,24 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
         )}
 
         {activeView === 'cards' && (
-          <>
-            {!isMobile && (
-              <CardsTable
-                cards={cards}
-                embedAnnotationIcon
-                hideRowActions
-                onSelectCard={onOpenCard}
-                onActivateCard={onOpenCard}
-                onAnnotationCard={onAnnotationCard}
-              />
-            )}
-            {isMobile && (
-              <ActivatedCardMobileList
-                cards={cards}
-                onOpenCard={onOpenCard}
-                onAnnotationCard={onAnnotationCard}
-              />
-            )}
+          <div
+            className={`activated-explorer-cards${isFetching ? ' activated-explorer-cards--busy' : ''}`}
+            aria-busy={isFetching ? 'true' : undefined}
+          >
+            <ActivatedCardMobileList cards={paginatedCards} onOpenCard={onOpenCard} />
             {!isFetching && !cards.length && (
               <p className="muted location-empty">Nenhum QR ativo neste bairro.</p>
             )}
-          </>
+            {cards.length > 0 && (
+              <Pagination
+                page={page}
+                pageCount={cardsPageCount}
+                onPageChange={setPage}
+                disabled={isFetching}
+                busy={isFetching}
+              />
+            )}
+          </div>
         )}
       </div>
 
@@ -386,7 +416,9 @@ const ActivatedLocationsExplorer = forwardRef(function ActivatedLocationsExplore
         parentId={nodeModal?.parentId ?? null}
         node={nodeModal?.node ?? null}
         onClose={() => setNodeModal(null)}
-        onSaved={() => refreshForView(selectedRef.current, activeViewRef.current)}
+        onSaved={() =>
+          refreshForView(selectedRef.current, activeViewRef.current, { refreshCounts: true })
+        }
       />
     </div>
   )

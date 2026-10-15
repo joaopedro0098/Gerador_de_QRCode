@@ -246,16 +246,17 @@ export default function CardsListPage() {
     const nextActivated = isCardActivated(updated)
 
     setCards((prev) => {
-      if (filter === 'virgin' && nextActivated) {
+      if (nextActivated && !prevActivated && (filter === 'virgin' || filter === 'stock')) {
         return prev.filter((c) => c.id !== updated.id)
       }
       return prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
     })
-    if (filter === 'virgin' && nextActivated) {
+    if (nextActivated && !prevActivated && (filter === 'virgin' || filter === 'stock')) {
       setTotal((t) => Math.max(0, t - 1))
     }
     if (filter === 'stock' && nextActivated && !prevActivated) {
       bumpExplorerRefresh()
+      loadCards({ silent: true })
     }
     setSelectedCard((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
 

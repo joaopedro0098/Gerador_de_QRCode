@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import Modal from '../ui/Modal.jsx'
 import ActivateForm from './ActivateForm.jsx'
 import { isCardActivated } from '../../utils/cardStatus.js'
-import { getLocationPathLabels } from '../../utils/locationApi.js'
 import { qrSvgForCode } from '../../utils/qr.js'
 
 function formatModalMeta(card) {
@@ -33,7 +32,6 @@ export default function CardDetailModal({
   const [svg, setSvg] = useState('')
   const [qrLoading, setQrLoading] = useState(true)
   const [displayCard, setDisplayCard] = useState(card)
-  const [locationPath, setLocationPath] = useState('')
   const [activatedSaveBusy, setActivatedSaveBusy] = useState(false)
   const activateFormRef = useRef(null)
 
@@ -71,21 +69,6 @@ export default function CardDetailModal({
   const readOnly = readOnlyActivated && !stockUi && !activateOnly
   const stockActivationUi = stockUi && displayCard && !editingActivatedCard
   const stockManageUi = stockUi && displayCard && editingActivatedCard
-
-  useEffect(() => {
-    const bairroId = displayCard?.location_bairro_id
-    if (!editingActivatedCard || activateOnly || !bairroId) {
-      setLocationPath('')
-      return
-    }
-    let cancelled = false
-    getLocationPathLabels(bairroId).then(({ data }) => {
-      if (!cancelled) setLocationPath(data?.trim() ? data : '')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [displayCard?.location_bairro_id, editingActivatedCard, activateOnly])
 
   if (!isOpen) return null
 
@@ -132,9 +115,6 @@ export default function CardDetailModal({
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           )}
-          {locationPath ? (
-            <p className="card-detail-location-path muted">{locationPath}</p>
-          ) : null}
         </section>
       )}
 

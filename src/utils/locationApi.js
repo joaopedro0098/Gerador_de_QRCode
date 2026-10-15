@@ -131,13 +131,24 @@ export async function listActivatedCardsInBairro(bairroId) {
 
 /** Quantos QR/NFC ativos existem em cada bairro (location_bairro_id). */
 export async function fetchActiveCardCountByBairroId() {
+  const { data, error } = await supabase.rpc('active_card_counts_by_bairro')
+  if (!error && data) {
+    const map = new Map()
+    for (const row of data) {
+      if (row.location_bairro_id) {
+        map.set(row.location_bairro_id, Number(row.card_count) || 0)
+      }
+    }
+    return { map, error: null }
+  }
+
   let query = supabase.from('cards').select('location_bairro_id').not('location_bairro_id', 'is', null)
   query = applyActivatedCardsFilter(query)
-  const { data, error } = await query
-  if (error) return { map: new Map(), error }
+  const fallback = await query
+  if (fallback.error) return { map: new Map(), error: fallback.error }
 
   const map = new Map()
-  for (const row of data ?? []) {
+  for (const row of fallback.data ?? []) {
     const id = row.location_bairro_id
     map.set(id, (map.get(id) ?? 0) + 1)
   }

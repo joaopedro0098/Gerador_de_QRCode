@@ -10,10 +10,10 @@ export function isCardVirgin(card) {
   return !card.activated_at && !card.stock_at
 }
 
-/** Estoque = configurável / desativado (stock_at preenchido). */
+/** Estoque = no estoque e ainda não ativado (desativado volta aqui com stock_at). */
 export function isCardInStock(card) {
   if (!card) return false
-  return Boolean(card.stock_at)
+  return Boolean(card.stock_at) && !card.activated_at
 }
 
 /** Filtros Supabase. */

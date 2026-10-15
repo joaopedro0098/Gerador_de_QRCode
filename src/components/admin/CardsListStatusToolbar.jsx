@@ -1,4 +1,6 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
+import GeneratePlaceLinkModal from './GeneratePlaceLinkModal.jsx'
+import { PLACE_ID_FINDER_URL } from '../../utils/placeIdLink.js'
 
 const STATUS_FILTERS = [
   { value: 'virgin', label: 'Virgens' },
@@ -18,22 +20,25 @@ function CardsListStatusToolbar({
   const isActivated = filter === 'activated'
   const isStock = filter === 'stock'
   const searchEnabled = isActivated || isStock
+  const [placeLinkOpen, setPlaceLinkOpen] = useState(false)
 
   return (
     <div className="toolbar toolbar-home toolbar-codes-top" data-filter={filter}>
-      <div className="filter-group filter-group-status" role="tablist" aria-label="Filtrar por status">
-        {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            role="tab"
-            aria-selected={filter === f.value}
-            className={`btn secondary small toolbar-codes-tab ${filter === f.value ? 'active' : ''}`}
-            onClick={() => onFilterChange(f.value)}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="filter-group filter-group-status">
+        <div className="toolbar-codes-status-tabs" role="tablist" aria-label="Filtrar por status">
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              role="tab"
+              aria-selected={filter === f.value}
+              className={`btn secondary small toolbar-codes-tab toolbar-codes-status-tab ${filter === f.value ? 'active' : ''}`}
+              onClick={() => onFilterChange(f.value)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
         {filter === 'virgin' && (
           <button
             type="button"
@@ -63,6 +68,25 @@ function CardsListStatusToolbar({
       </div>
 
       <div className="toolbar-codes-trailing">
+        {isStock && (
+          <div className="toolbar-codes-stock-actions">
+            <a
+              href={PLACE_ID_FINDER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn secondary small toolbar-codes-tab toolbar-codes-external-link"
+            >
+              Place ID
+            </a>
+            <button
+              type="button"
+              className="btn secondary small toolbar-codes-tab"
+              onClick={() => setPlaceLinkOpen(true)}
+            >
+              Gerar link
+            </button>
+          </div>
+        )}
         <div
           className={`toolbar-codes-trailing-slot${showActivatedExplorer ? '' : ' toolbar-codes-trailing-slot--inactive'}`}
         >
@@ -71,6 +95,8 @@ function CardsListStatusToolbar({
           </button>
         </div>
       </div>
+
+      <GeneratePlaceLinkModal open={placeLinkOpen} onClose={() => setPlaceLinkOpen(false)} />
     </div>
   )
 }

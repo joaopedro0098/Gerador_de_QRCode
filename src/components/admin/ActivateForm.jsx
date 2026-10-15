@@ -466,8 +466,10 @@ const ActivateForm = forwardRef(function ActivateForm(
         : result.savedUrlOnly
           ? 'Link NFC salvo.'
           : 'NFC gravado com sucesso.'
+      const becameActivated = !wasActivated && isCardActivated(result.data)
       finishSuccess(result.data, nfcSuccessText, {
         tone: result.hardwareSkipped ? null : 'nfc',
+        navigateToActivated: becameActivated && stockActivationUi && !nfcDraftOnly,
       })
     } finally {
       if (nfcWriteSessionRef.current === nfcWriteSession) {
@@ -684,8 +686,16 @@ const ActivateForm = forwardRef(function ActivateForm(
         </label>
       )}
 
-      <label>
-        QR Code
+      <label className="activate-field-with-clear">
+        <span className="activate-field-title">QR Code</span>
+        <button
+          type="button"
+          className="btn-ghost-link activate-field-clear"
+          disabled={fieldInputDisabled()}
+          onClick={() => setDestinationUrl('')}
+        >
+          Limpar
+        </button>
         {unifiedFieldUi ? (
           <input
             ref={linkInputRef}
@@ -721,18 +731,18 @@ const ActivateForm = forwardRef(function ActivateForm(
             </button>
           </div>
         )}
+      </label>
+
+      <label className="activate-field-with-clear">
+        <span className="activate-field-title">NFC</span>
         <button
           type="button"
           className="btn-ghost-link activate-field-clear"
           disabled={fieldInputDisabled()}
-          onClick={() => setDestinationUrl('')}
+          onClick={() => setNfcUrl('')}
         >
           Limpar
         </button>
-      </label>
-
-      <label>
-        NFC
         <div className="activate-inline-actions">
           <input
             type="text"
@@ -753,14 +763,6 @@ const ActivateForm = forwardRef(function ActivateForm(
             {busy === 'nfc' ? 'Aproxime a tag…' : 'Gravar'}
           </button>
         </div>
-        <button
-          type="button"
-          className="btn-ghost-link activate-field-clear"
-          disabled={fieldInputDisabled()}
-          onClick={() => setNfcUrl('')}
-        >
-          Limpar
-        </button>
       </label>
 
       {nfcDebug && (
